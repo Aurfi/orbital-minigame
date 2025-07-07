@@ -1,0 +1,35 @@
+{
+  "name": "mini-orbital-launch-game",
+  "version": "1.0.0",
+  "description": "Educational web-based rocket simulation game that teaches programming concepts and orbital mechanics",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:docker": "docker-compose run --rm game-test",
+    "test:docker:watch": "docker-compose run --rm game-test-watch",
+    "dev:docker": "docker-compose up game-dev",
+    "build:docker": "docker-compose build game-prod",
+    "start:docker": "docker-compose up game-prod",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": ["game", "education", "rocket", "orbital-mechanics", "programming", "typescript"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "@types/node": "^24.3.0",
+    "@vitest/ui": "^3.2.4",
+    "esbuild": "^0.25.9",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,51 @@
+services:
+  # Base service with dependencies pre-installed
+  game-base:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: orbital-game:latest
+    volumes:
+      - node_modules_cache:/app/node_modules
+    command: ["echo", "Base image built"]
+
+  # Development environment
+  game-dev:
+    image: orbital-game:latest
+    depends_on:
+      - game-base
+    ports:
+      - "9876:9876"
+    volumes:
+      - .:/app
+      - node_modules_cache:/app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: npm run dev
+
+  # Test environment
+  game-test:
+    image: orbital-game:latest
+    depends_on:
+      - game-base
+    volumes:
+      - .:/app
+      - node_modules_cache:/app/node_modules
+    environment:
+      - NODE_ENV=test
+    command: npm test
+
+  # Watch tests during development
+  game-test-watch:
+    image: orbital-game:latest
+    depends_on:
+      - game-base
+    volumes:
+      - .:/app
+      - node_modules_cache:/app/node_modules
+    environment:
+      - NODE_ENV=test
+    command: npm run test:watch
+
+volumes:
+  node_modules_cache:

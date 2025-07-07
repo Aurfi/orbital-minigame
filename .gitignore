@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# coverage
+coverage/
+.v8/
+
+# env files
+.env
+.env.local
+
+# misc
+.DS_Store
+*.log
+*.pid
+*.seed
+*.tgz
