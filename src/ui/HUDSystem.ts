@@ -75,12 +75,12 @@ export class HUDSystem {
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
 
-    // Draw background panel - room for fuel gauge
+    // Draw background panel - expanded height to fit delta-V and gauge comfortably
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 280, 220);
+    ctx.fillRect(10, 10, 300, 260);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(10, 10, 280, 220);
+    ctx.strokeRect(10, 10, 300, 260);
 
     // Draw flight data
     ctx.fillStyle = '#ffffff';
@@ -161,7 +161,7 @@ export class HUDSystem {
     ctx.fillText(`Delta-V:   ${dvText}`, 20, y);
 
     // Draw fuel gauge
-    y += 10; // small spacer before gauge
+    y += lineHeight + 12; // add full line spacing before gauge
     this.drawFuelGauge(ctx, 20, y, fuel, rocket, gameState);
 
     // Draw mission timer and restart button in top-right corner
