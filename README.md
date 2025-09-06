@@ -76,16 +76,6 @@ Only rebuild the Docker image when:
 docker-compose build game-base --no-cache  # Force rebuild if needed
 ```
 
-### ❌ DO NOT RUN LOCALLY
-
-**Never run these commands directly on your host machine:**
-- ❌ `npm test` 
-- ❌ `npm run dev`
-- ❌ `npm run build`
-- ❌ `vitest`
-
-**Always use the Docker equivalents above instead.**
-
 ## Project Structure
 
 ```
@@ -96,3 +86,4 @@ src/
 └── ui/           # User interface and HUD elements
 
 ```
+
