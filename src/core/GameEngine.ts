@@ -135,8 +135,8 @@ export class GameEngine {
     // Initialize game state first
     this.initializeGameState();
     
-    // Engine sound (put file at public/sounds/rocket-launch-306441.mp3)
-    this.sound = new SoundSystem(SoundPaths.engine);
+    // Engine sound: start clip + loop clip
+    this.sound = new SoundSystem(SoundPaths.engineStart, SoundPaths.engineLoop);
     this.sound.setMuted(!isSoundEnabled());
     // One-shot SFX (put files under public/sounds)
     this.sfx = {
@@ -636,6 +636,12 @@ export class GameEngine {
 
     // Apply atmospheric speed cap and heating
     this.enforceAtmosphericLimits(deltaTime);
+
+    // Update engine sound environment (muffle in space)
+    const altForSound = this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude());
+    const dens = this.gameState.world.getAtmosphericDensity(Math.max(0, altForSound));
+    const densNorm = Math.max(0, Math.min(1, dens / this.gameState.world.surfaceDensity));
+    this.sound?.setEnvironmentByDensity(densNorm);
 
     // Update rocket state from physics
     this.updateRocketState();
@@ -1608,8 +1614,11 @@ export class GameEngine {
       // Stage-specific loudness (upper stages a bit quieter)
       const stageIdx = this.rocketConfig.getCurrentStageIndex();
       this.sound?.setBaseGain(getEngineBaseGainForStage(stageIdx));
-      // Start engine sound (full start plays once, tail loops while on)
-      this.sound?.startEngine(this.gameState.rocket.throttle).catch(() => {});
+      // First ignition has louder start; subsequent ignitions a bit quieter
+      const startLoud = this.firstIgnitionPlayed ? 0.7 : 1.0;
+      this.firstIgnitionPlayed = true;
+      // Start engine sound (start clip then loop)
+      this.sound?.startEngine(this.gameState.rocket.throttle, startLoud).catch(() => {});
       return true;
     }
     console.log('❌ No thrust available - ignition failed');
