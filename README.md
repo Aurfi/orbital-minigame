@@ -2,9 +2,7 @@
 
 Educational web-based rocket simulation game that teaches programming concepts and orbital mechanics.
 
-## 🐳 Docker Development Setup (REQUIRED)
-
-**⚠️ IMPORTANT: This project MUST be run using Docker. Do NOT attempt to run tests, dev server, or build commands locally. All development should be done through Docker containers to ensure consistent environment and dependencies.**
+## 🐳 Docker Development Setup
 
 ### Prerequisites
 - Docker and Docker Compose installed
@@ -96,4 +94,5 @@ src/
 ├── physics/       # Physics simulation and orbital mechanics
 ├── rendering/     # Canvas rendering and graphics
 └── ui/           # User interface and HUD elements
+
 ```
