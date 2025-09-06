@@ -1,6 +1,7 @@
 import { Vector2 } from '../physics/Vector2.js';
 
-// Canvas 2D renderer for the game
+// Canvas 2D renderer for the game. Keeps world units and handles camera
+// transforms so drawing code stays simple.
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private context: CanvasRenderingContext2D;
@@ -29,7 +30,7 @@ export class CanvasRenderer {
     this.canvas.height = rect.height * this.pixelRatio;
 
     // Scale the drawing context so everything draws at the correct size
-    this.context.scale(this.pixelRatio, this.pixelRatio);
+    this.context.scale(this.pixelRatio, this.pixelRatio); // device-pixel aware
 
     // Set CSS size to maintain proper display size
     this.canvas.style.width = `${rect.width}px`;

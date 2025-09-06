@@ -304,13 +304,34 @@ export class HUDSystem {
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // Helper: map world (wx, wy) to minimap using logarithmic radial scaling
+    // Draw projected trajectory (no thrust/drag). Simple two-body preview
+    // over enough time to reveal crash, orbit, or escape.
+    const info = this.getProjectedPath(gameState, 8 * 3600, 1.0);
+    const pathPreview = this.cachedPath || [];
+    // Dynamic outer scale: use the maximum radius in the preview, fallback to apoapsis
+    let maxR = planetRadiusWorld;
+    for (let i = 0; i < pathPreview.length; i++) {
+      const p = pathPreview[i];
+      const r = Math.hypot(p.x, p.y);
+      if (r > maxR) maxR = r;
+    }
+    if (info.apoAlt && isFinite(info.apoAlt)) {
+      const rA = planetRadiusWorld + Math.max(0, info.apoAlt);
+      if (rA > maxR) maxR = rA;
+    }
+    // Clamp overall outer scale so escape doesn't blow up the map
+    const maxDisplayR = Math.min(maxR, planetRadiusWorld * 6);
+    const aMaxDynamic = Math.max(10_000, maxDisplayR - planetRadiusWorld);
+
+    // Helper: map world (wx, wy) to minimap using logarithmic radial scaling.
+    // Log scale keeps far points visible without crushing near ones.
     const worldToMini = (wx: number, wy: number) => {
       const rWorld = Math.hypot(wx, wy);
       let ux = rWorld > 0 ? wx / rWorld : 0;
       let uy = rWorld > 0 ? wy / rWorld : 1; // default up
 
-      // In the ground frame (alt < 20 km), rotate rocket vector with globe so marker stays over land
+      // In the ground frame (alt < 20 km), rotate the vector with the globe
+      // so the marker appears locked over the same land.
       const alt = Math.max(0, rWorld - planetRadiusWorld);
       if (alt < 20_000) {
         const ang = this.miniAngle; // earth angle
@@ -320,10 +341,9 @@ export class HUDSystem {
         ux = rx; uy = ry;
       }
 
-      // Log radial mapping: 0 -> planet edge, aMax -> panel edge
-      const aMax = 2_000_000; // 2,000 km target edge distance
+      // Log radial mapping: 0 -> planet edge, aMaxDynamic -> panel edge.
       const aRef = 10_000;    // reference scale for curve shape (10 km)
-      const tRadial = Math.min(1, Math.log1p(alt / aRef) / Math.log1p(aMax / aRef));
+      const tRadial = Math.min(1, Math.log1p(alt / aRef) / Math.log1p(aMaxDynamic / aRef));
       const rMini = planetRadiusMini + (panelEdgeRadius - planetRadiusMini) * tRadial;
 
       // Convert unit vector to mini coords (y-up to screen space)
@@ -333,9 +353,6 @@ export class HUDSystem {
       const sy = cy - dy;
       return { sx, sy };
     };
-
-    // Draw projected trajectory (no thrust/drag) up to 8 hours or until collision/orbit/escape
-    const info = this.getProjectedPath(gameState, 8 * 3600, 1.0);
     const pathPts = this.cachedPath || [];
     if (pathPts.length > 1) {
       const maxDots = 1000; // cap for performance
@@ -371,10 +388,12 @@ export class HUDSystem {
       ctx.font = '12px monospace';
       // Apoapsis label (green)
       ctx.fillStyle = '#00ff66';
-      ctx.fillText(`Apoapsis: ${(info.apoAlt / 1000).toFixed(0)} km`, x, apoY);
+      const apoLabel = isFinite(info.apoAlt) ? `${(info.apoAlt / 1000).toFixed(0)} km` : '∞ (escape)';
+      ctx.fillText(`Apoapsis: ${apoLabel}`, x, apoY);
       // Periapsis label (red)
       ctx.fillStyle = '#ff6666';
-      ctx.fillText(`Periapsis: ${(info.periAlt / 1000).toFixed(0)} km`, x, periY);
+      const periLabel = isFinite(info.periAlt) ? `${(info.periAlt / 1000).toFixed(0)} km` : '—';
+      ctx.fillText(`Periapsis: ${periLabel}`, x, periY);
 
       // Stable orbit notice
       if (info.stableOrbit) {
@@ -436,13 +455,17 @@ export class HUDSystem {
   }
 
   /**
-   * Cached accessor for projected path. Recomputes at most 1 Hz or when state changes.
+   * Cached accessor for projected path. Recomputes slowly while coasting in
+   * vacuum to keep apoapsis/periapsis steady.
    */
   private getProjectedPath(gameState: GameState, steps: number, dtSeconds: number): { apoAlt: number; apoPos: { x: number; y: number } | null; periAlt: number; periPos: { x: number; y: number } | null; stableOrbit: boolean } {
     const now = Date.now();
     const thrusting = gameState.rocket.isEngineIgnited && gameState.rocket.throttle > 0;
     const vel = gameState.rocket.velocity;
     const stage = gameState.rocket.currentStage;
+    const rmag = gameState.rocket.position.magnitude();
+    const altitude = rmag - gameState.world.planetRadius;
+    const inVacuumCoast = !thrusting && altitude >= 80_000;
 
     // Decide if we need to recompute
     let needRecalc = false;
@@ -454,7 +477,7 @@ export class HUDSystem {
     if (this.lastThrusting !== thrusting || this.lastStage !== stage) needRecalc = true;
 
     // If velocity changed significantly (magnitude or direction), recompute
-    if (this.lastVel) {
+    if (this.lastVel && !inVacuumCoast) {
       const dvx = vel.x - this.lastVel.x;
       const dvy = vel.y - this.lastVel.y;
       const dv = Math.hypot(dvx, dvy);
@@ -476,8 +499,9 @@ export class HUDSystem {
       needRecalc = true;
     }
 
-    // Rate limit to ~1 Hz
-    if (!needRecalc && (now - this.lastProjTimeMs) < 1000 && this.cachedInfo) return this.cachedInfo;
+    // Rate limiting: 1 Hz normally, 0.1 Hz when coasting in vacuum to keep apo/peri steady
+    const minInterval = inVacuumCoast ? 10_000 : 1000;
+    if (!needRecalc && (now - this.lastProjTimeMs) < minInterval && this.cachedInfo) return this.cachedInfo;
 
     // If not thrusting and velocity hasn't changed and we have cache, keep it
     if (!needRecalc && this.cachedInfo) return this.cachedInfo;
@@ -496,6 +520,9 @@ export class HUDSystem {
 
   /**
    * Compute trajectory points plus apoapsis/periapsis and stable-orbit detection.
+   * Uses orbital elements (eccentricity e, angular momentum h) to get
+   * rp = h^2/(μ*(1+e)) and ra = h^2/(μ*(1−e)) when e < 1. If specific energy > 0,
+   * apoapsis is infinite (escape).
    */
   private computeProjectedPathInfo(gameState: GameState, simSeconds: number, _dtSeconds: number): { points: Array<{ x: number; y: number }>; apoAlt: number; apoPos: { x: number; y: number } | null; periAlt: number; periPos: { x: number; y: number } | null; stableOrbit: boolean } {
     const mu = gameState.world.gravitationalParameter as unknown as number;
@@ -508,6 +535,26 @@ export class HUDSystem {
     let vx = gameState.rocket.velocity.x;
     let vy = gameState.rocket.velocity.y;
 
+    // Compute instantaneous orbital elements (two-body, no thrust/drag)
+    const r0 = Math.hypot(rx, ry);
+    const v2_0 = vx * vx + vy * vy;
+    const rv = rx * vx + ry * vy;
+    const eVecX = (1 / mu) * ((v2_0 - mu / r0) * rx - rv * vx);
+    const eVecY = (1 / mu) * ((v2_0 - mu / r0) * ry - rv * vy);
+    const eMag = Math.hypot(eVecX, eVecY);
+    const h = Math.abs(rx * vy - ry * vx);
+    const rp = h * h / (mu * (1 + eMag));
+    let ra = Number.POSITIVE_INFINITY;
+    if (eMag < 1) {
+      ra = h * h / (mu * (1 - eMag));
+    }
+    let apoAlt = isFinite(ra) ? Math.max(0, ra - R) : Number.POSITIVE_INFINITY;
+    let periAlt = Math.max(0, rp - R);
+    let apoPos: { x: number; y: number } | null = null;
+    let periPos: { x: number; y: number } | null = null;
+    const stableThreshold = 80_000;
+    let stableOrbit = eMag < 1 && (rp - R) > stableThreshold;
+
     // Adaptive timestep: precise for the first hour, then progressively coarser
     const pickDt = (tSim: number): number => {
       if (tSim < 3600) return 1.0;           // first hour: 1 s
@@ -516,15 +563,9 @@ export class HUDSystem {
       return 30.0;                           // 6–8 h: 30 s
     };
 
-    let apoAlt = -Infinity;
-    let apoPos: { x: number; y: number } | null = null;
-    let periAlt = Infinity;
-    let periPos: { x: number; y: number } | null = null;
-
     let lastAngle = Math.atan2(ry, rx);
     let rotAccum = 0; // accumulate angle traversed
-    const stableThreshold = 80_000; // 80 km perigee for stable orbit
-    let stableOrbit = false;
+    // If we already confirmed a stable ellipse, we can stop early after about one rev
 
     const escapeRenderRadius = R * 6; // stop rendering once far away if escaping
     let tSim = 0;
@@ -536,9 +577,18 @@ export class HUDSystem {
       const alt = r - R;
       if (r <= R) break; // collision
 
-      // Track apsides
-      if (alt > apoAlt) { apoAlt = alt; apoPos = { x: rx, y: ry }; }
-      if (alt < periAlt) { periAlt = alt; periPos = { x: rx, y: ry }; }
+      // Track closest/farthest positions for markers only if we don't have analytic ellipse
+      if (!isFinite(ra)) {
+        // Hyperbolic: apoapsis undefined; keep the farthest point encountered for a marker
+        if (!apoPos || r > Math.hypot(apoPos.x, apoPos.y)) {
+          apoPos = { x: rx, y: ry };
+          apoAlt = alt;
+        }
+      } else {
+        // Elliptic: set approximate apo/peri marker positions near expected radii when crossed
+        if (!apoPos && Math.abs(r - ra) < 1000) apoPos = { x: rx, y: ry };
+        if (!periPos && Math.abs(r - rp) < 1000) periPos = { x: rx, y: ry };
+      }
 
       // Save point
       out.push({ x: rx, y: ry });
@@ -570,16 +620,17 @@ export class HUDSystem {
       rotAccum += Math.abs(dAng);
       lastAngle = ang;
 
-      // If we have completed ~one full revolution and perigee is above threshold, treat as stable orbit
-      if (!stableOrbit && rotAccum >= 2 * Math.PI && periAlt > stableThreshold) {
+      // If we have completed ~one full revolution on an ellipse with perigee above threshold, stop
+      if (!stableOrbit && eMag < 1 && rotAccum >= 2 * Math.PI && (rp - R) > stableThreshold) {
         stableOrbit = true;
         // draw approximately one full revolution and stop early
         break;
       }
     }
-
-    if (apoAlt === -Infinity) { apoAlt = 0; apoPos = null; }
-    if (periAlt === Infinity) { periAlt = 0; periPos = null; }
+    if (!isFinite(ra)) {
+      // No apoapsis in hyperbolic case
+      apoAlt = Number.POSITIVE_INFINITY;
+    }
 
     return { points: out, apoAlt, apoPos, periAlt, periPos, stableOrbit };
   }

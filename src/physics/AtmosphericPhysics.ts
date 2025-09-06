@@ -22,6 +22,7 @@ export class AtmosphericPhysics {
    * @param crossSectionalArea Cross-sectional area A (m²)
    * @returns Drag force vector (N)
    */
+  // Standard drag model: Fd = 0.5 * rho * v^2 * Cd * A, opposite to velocity
   static calculateDragForce(
     velocity: Vector2,
     density: number,
@@ -43,6 +44,7 @@ export class AtmosphericPhysics {
    * @param density Atmospheric density (kg/m³)
    * @returns Dynamic pressure (Pa)
    */
+  // Dynamic pressure ("q"): useful for max-Q and heating cues
   static calculateDynamicPressure(velocity: Vector2, density: number): number {
     const speed = velocity.magnitude();
     return 0.5 * density * speed * speed;
@@ -55,6 +57,8 @@ export class AtmosphericPhysics {
    * @param density Atmospheric density (kg/m³)
    * @returns Heat flux (W/m²)
    */
+  // Very simple heat flux: proportional to q * v. Not physically exact,
+  // chosen for readable gameplay feedback.
   static calculateHeatFlux(velocity: Vector2, density: number): number {
     const speed = velocity.magnitude();
     const dynamicPressure = AtmosphericPhysics.calculateDynamicPressure(velocity, density);
@@ -82,6 +86,7 @@ export class AtmosphericPhysics {
    * @param gravity Gravitational acceleration (m/s²)
    * @returns Terminal velocity (m/s)
    */
+  // Terminal velocity using balance of drag and weight
   static calculateTerminalVelocity(
     mass: number,
     density: number,
@@ -100,6 +105,7 @@ export class AtmosphericPhysics {
    * @param deltaTime Time step (s)
    * @returns Heat buildup rate (percentage per second)
    */
+  // Integrates a very rough "heat meter" from dynamic pressure
   static calculateHeatBuildup(dynamicPressure: number, deltaTime: number): number {
     if (dynamicPressure <= 0) return 0;
 

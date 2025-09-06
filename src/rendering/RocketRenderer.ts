@@ -31,6 +31,8 @@ export interface RocketVisualConfig {
   fuelIndicatorBorder: string;
 }
 
+// Simple, stylized rocket drawing. Dimensions are tuned for readability,
+// not strict real-world scale.
 export class RocketRenderer {
   private config: RocketVisualConfig;
   
@@ -67,7 +69,8 @@ export class RocketRenderer {
   }
 
   /**
-   * Render the rocket with current state
+   * Render the rocket with current state. Keeps the rocket centered on its
+   * position to avoid visual snapping while rotating.
    */
   render(renderer: CanvasRenderer, rocketState: RocketState): void {
     const position = rocketState.position;
@@ -109,7 +112,8 @@ export class RocketRenderer {
   }
 
   /**
-   * Draw the main rocket body with stages (only active and above)
+   * Draw the main rocket body with stages (only active and above). Lower
+   * stages are considered separated and are drawn elsewhere.
    */
   private drawRocketBody(renderer: CanvasRenderer, rocketState: RocketState, baseYOffset: number = 0): void {
     let currentY = baseYOffset; // start centered to reduce rotation snapping
@@ -145,7 +149,7 @@ export class RocketRenderer {
         color = this.config.payloadColor;
       }
       
-      // Draw stage body with rounded corners effect
+      // Draw stage body (rounded effect via stroke)
       const stagePos = new Vector2(-width / 2, currentY);
       renderer.drawRectangle(stagePos, width, height, color, '#000000', 2);
       
@@ -166,7 +170,7 @@ export class RocketRenderer {
       currentY += height;
     }
     
-    // Store exhaust position for later use
+    // Store exhaust position for later use (world conversion happens after rotate)
     rocketState.exhaustY = activeStageBottomY;
     
     // Draw payload/nose cone

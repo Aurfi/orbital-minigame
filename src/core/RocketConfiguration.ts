@@ -1,6 +1,7 @@
 // Rocket configuration data models
 import { StageConfiguration } from './types.js';
 
+// Holds stage data and exposes simple helpers for mass, thrust and staging.
 export class RocketConfiguration {
   public stages: StageConfiguration[];
   public payloadMass: number;
@@ -13,6 +14,7 @@ export class RocketConfiguration {
     dragCoefficient: number = 0.3,
     crossSectionalArea: number = 10
   ) {
+    // Clone stages so incoming objects are not mutated by the game
     this.stages = stages.map((stage) => ({
       ...stage,
       fuelRemaining: stage.propellantMass, // Initialize fuel to full
@@ -81,6 +83,7 @@ export class RocketConfiguration {
    * @param throttle Throttle setting (0.0 to 1.0)
    * @returns Fuel consumption rate (kg/s)
    */
+  // Sum of (thrust / (Isp * g0)) for active stages, scaled by throttle
   getFuelConsumptionRate(throttle: number): number {
     const activeStages = this.stages.filter((stage) => stage.isActive && stage.fuelRemaining > 0);
 
@@ -97,6 +100,7 @@ export class RocketConfiguration {
    * @param throttle Throttle setting (0.0 to 1.0)
    * @returns True if fuel was consumed, false if no fuel available
    */
+  // Reduces fuel for active stages. Returns true if any fuel was consumed.
   consumeFuel(deltaTime: number, throttle: number): boolean {
     const activeStages = this.stages.filter((stage) => stage.isActive && stage.fuelRemaining > 0);
 
@@ -194,6 +198,7 @@ export class RocketConfiguration {
    * @param currentThrust Current thrust being applied
    * @returns True if guaranteed explosion (any thrust > 0)
    */
+  // Simple rule for now: any thrust during staging triggers an explosion.
   wouldExplodeOnStaging(currentThrust: number): boolean {
     // Any thrust during staging = guaranteed boom
     return currentThrust > 0;

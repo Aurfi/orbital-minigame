@@ -11,6 +11,7 @@ export class PhysicsIntegrator {
    * @param deltaTime Frame time (seconds)
    * @param updateCallback Function to call for each physics substep
    */
+  // Runs fixed substeps even if frame time varies. Prevents "spiral of death".
   update(deltaTime: number, updateCallback: (dt: number) => void): void {
     // Clamp deltaTime to prevent spiral of death
     const clampedDeltaTime = Math.min(deltaTime, 0.25);
@@ -37,6 +38,7 @@ export class PhysicsIntegrator {
    * @param acceleration Current acceleration
    * @param deltaTime Integration timestep
    */
+  // Semi-implicit Euler: stable for forces like gravity + thrust
   static integrateMotion(
     position: Vector2,
     velocity: Vector2,
@@ -64,6 +66,8 @@ export class PhysicsIntegrator {
    * @param previousAcceleration Previous frame acceleration
    * @param deltaTime Integration timestep
    */
+  // Verlet alternative (not used by default). Better for conservative forces,
+  // but needs previous acceleration.
   static integrateVerlet(
     position: Vector2,
     velocity: Vector2,
@@ -90,6 +94,7 @@ export class PhysicsIntegrator {
    * @param deltaTime Integration timestep
    * @returns True if integration is stable
    */
+  // Quick guard rails for extreme numbers. Helps avoid explosions in state.
   static isStable(velocity: Vector2, acceleration: Vector2, deltaTime: number): boolean {
     const maxVelocity = 50_000; // 50 km/s max velocity
     const maxAcceleration = 1000; // 1000 m/s² max acceleration

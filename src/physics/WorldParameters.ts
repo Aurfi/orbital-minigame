@@ -23,6 +23,21 @@ export class WorldParameters {
   }
 
   /**
+   * Approximate speed of sound (m/s) vs altitude using a simple ISA-like profile.
+   * Keeps it constant above ~20 km for simplicity.
+   */
+  getSpeedOfSound(altitude: number): number {
+    if (altitude <= 0) return 340; // sea level ~340 m/s
+    if (altitude < 11_000) {
+      // Linear drop to ~295 m/s by 11 km (troposphere)
+      const t = altitude / 11_000;
+      return 340 - (340 - 295) * t;
+    }
+    // Roughly constant through lower stratosphere for our purposes
+    return 295;
+  }
+
+  /**
    * Get altitude from position vector magnitude
    * @param positionMagnitude Distance from planet center (m)
    * @returns Altitude above surface (m)

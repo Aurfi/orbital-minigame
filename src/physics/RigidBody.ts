@@ -2,6 +2,8 @@ import { PhysicsIntegrator } from './PhysicsIntegrator.js';
 import { Vector2 } from './Vector2.js';
 
 // RigidBody class for rocket physics simulation
+// Simple rigid body used for the rocket. Only what is needed for this game:
+// position, velocity, rotation, angular velocity, forces and torques.
 export class RigidBody {
   public position: Vector2;
   public velocity: Vector2;
@@ -79,6 +81,7 @@ export class RigidBody {
    * @param deltaTime Integration timestep (s)
    * @param momentOfInertia Moment of inertia for rotation (kg⋅m²)
    */
+  // Integrates linear and angular motion for one step
   integrate(deltaTime: number, momentOfInertia = 1000): void {
     const acceleration = this.getAcceleration();
     const angularAcceleration = this.getAngularAcceleration(momentOfInertia);
@@ -96,7 +99,7 @@ export class RigidBody {
     this.angularVelocity += angularAcceleration * deltaTime;
     this.rotation += this.angularVelocity * deltaTime;
 
-    // Wrap rotation to [-π, π] to avoid jumps across 0 → 2π when slightly negative
+    // Keep rotation in [-π, π] to avoid visual jumps around 2π
     if (this.rotation > Math.PI) this.rotation -= 2 * Math.PI;
     if (this.rotation < -Math.PI) this.rotation += 2 * Math.PI;
 

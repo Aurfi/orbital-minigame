@@ -2,9 +2,7 @@
 
 Educational web-based rocket simulation game that teaches programming concepts and orbital mechanics.
 
-## 🐳 Docker Development Setup (REQUIRED)
-
-**⚠️ IMPORTANT: This project MUST be run using Docker. Do NOT attempt to run tests, dev server, or build commands locally. All development should be done through Docker containers to ensure consistent environment and dependencies.**
+## 🐳 Docker Development Setup
 
 ### Prerequisites
 - Docker and Docker Compose installed
@@ -78,16 +76,6 @@ Only rebuild the Docker image when:
 docker-compose build game-base --no-cache  # Force rebuild if needed
 ```
 
-### ❌ DO NOT RUN LOCALLY
-
-**Never run these commands directly on your host machine:**
-- ❌ `npm test` 
-- ❌ `npm run dev`
-- ❌ `npm run build`
-- ❌ `vitest`
-
-**Always use the Docker equivalents above instead.**
-
 ## Project Structure
 
 ```
@@ -95,7 +83,7 @@ src/
 ├── core/          # Core game engine and interfaces
 ├── physics/       # Physics simulation and orbital mechanics
 ├── rendering/     # Canvas rendering and graphics
-└── ui/           # User interface and HUD elements
+└── ui/            # User interface and HUD elements
 ```
 
 ## Gameplay Overview
@@ -208,9 +196,8 @@ Honest caveats about the current model:
 ### Roadmap ideas (non-binding)
 
 - Optional, better drag model below 80 km (Cd·A varying with attitude and Mach-like effects).
-- More guidance/assistance overlays (apo/peri altitudes on the main HUD; surface/orbital speed readouts).
-- Sound/FX and camera shake under thrust.
-- Re-introduce a programmable command interface without affecting Manual mode.
+
+- Sound/FX under thrust depending on thrust % and engine
 
 ## Releasing / Running
 

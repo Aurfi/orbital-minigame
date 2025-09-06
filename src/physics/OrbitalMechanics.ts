@@ -1,6 +1,7 @@
 import type { Vector2 } from './Vector2.js';
 
-// Orbital mechanics calculation functions
+// Small helpers for common orbit math. Uses standard two-body formulas
+// (specific energy, angular momentum, eccentricity) for clarity.
 export class OrbitalMechanics {
   /**
    * Calculate apoapsis altitude from position and velocity vectors
@@ -9,19 +10,20 @@ export class OrbitalMechanics {
    * @param mu Gravitational parameter (m³/s²)
    * @returns Apoapsis altitude above surface (m)
    */
-  static calculateApoapsis(position: Vector2, velocity: Vector2, mu: number): number {
+  static calculateApoapsis(position: Vector2, velocity: Vector2, mu: number, planetRadius: number): number {
     const r = position.magnitude();
     const v = velocity.magnitude();
+    // Specific orbital energy ε = v^2/2 − μ/r
     const specificEnergy = (v * v) / 2 - mu / r;
 
     if (specificEnergy >= 0) return Number.POSITIVE_INFINITY; // Escape trajectory
 
+    // a = −μ/(2ε), e = sqrt(1 + 2εh^2/μ^2)
     const semiMajorAxis = -mu / (2 * specificEnergy);
     const h = position.cross(velocity);
     const eccentricity = Math.sqrt(1 + (2 * specificEnergy * h * h) / (mu * mu));
 
     const apoapsisRadius = semiMajorAxis * (1 + eccentricity);
-    const planetRadius = 600_000; // Default toy Earth radius
     return Math.max(0, apoapsisRadius - planetRadius);
   }
 
@@ -32,9 +34,10 @@ export class OrbitalMechanics {
    * @param mu Gravitational parameter (m³/s²)
    * @returns Periapsis altitude above surface (m)
    */
-  static calculatePeriapsis(position: Vector2, velocity: Vector2, mu: number): number {
+  static calculatePeriapsis(position: Vector2, velocity: Vector2, mu: number, planetRadius: number): number {
     const r = position.magnitude();
     const v = velocity.magnitude();
+    // ε as above
     const specificEnergy = (v * v) / 2 - mu / r;
 
     if (specificEnergy >= 0) return Number.NEGATIVE_INFINITY; // Escape trajectory
@@ -44,7 +47,6 @@ export class OrbitalMechanics {
     const eccentricity = Math.sqrt(1 + (2 * specificEnergy * h * h) / (mu * mu));
 
     const periapsisRadius = semiMajorAxis * (1 - eccentricity);
-    const planetRadius = 600_000; // Default toy Earth radius
     return periapsisRadius - planetRadius;
   }
 
@@ -78,7 +80,7 @@ export class OrbitalMechanics {
     // Check minimum safe altitude (70km)
     if (periapsis < 70_000) return false;
 
-    // Check maximum eccentricity for stability (0.1)
+    // Simple quality-of-life rule for the game: keep orbits not too elongated
     if (eccentricity > 0.1) return false;
 
     return true;

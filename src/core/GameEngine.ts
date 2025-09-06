@@ -3,12 +3,17 @@ import { RigidBody } from '../physics/RigidBody.js';
 import { WorldParameters } from '../physics/WorldParameters.js';
 import { AtmosphericPhysics } from '../physics/AtmosphericPhysics.js';
 import { PhysicsIntegrator } from '../physics/PhysicsIntegrator.js';
+import { OrbitalMechanics } from '../physics/OrbitalMechanics.js';
+import { SfxPlayer } from './SfxPlayer.js';
 import { CanvasRenderer, Camera } from '../rendering/CanvasRenderer.js';
 import { RocketRenderer } from '../rendering/RocketRenderer.js';
 import { HUDSystem } from '../ui/HUDSystem.js';
 import { RocketConfiguration } from './RocketConfiguration.js';
 import spaceFacts from '../data/space_facts.json';
 import type { GameState } from './types.js';
+import { SoundSystem } from './SoundSystem.js';
+import { SoundPaths, getEngineBaseGainForStage } from './AudioConfig.js';
+import { isSoundEnabled } from './Settings.js';
 
 // Main game engine class
 export class GameEngine {
@@ -18,6 +23,10 @@ export class GameEngine {
   private hudSystem: HUDSystem;
   private rocketRenderer: RocketRenderer;
   private physicsIntegrator: PhysicsIntegrator;
+  private sound: SoundSystem | null = null;
+  private sfx: { explosion: SfxPlayer; success: SfxPlayer; start: SfxPlayer } | null = null;
+  private successSpacePlayed = false;
+  private successOrbitPlayed = false;
 
   private gameState!: GameState;
   private rocketBody!: RigidBody;
@@ -94,6 +103,13 @@ export class GameEngine {
   private hasBurnedUp = false;
   private padBaseAngle: number = Math.PI / 2; // base ground angle for pad/site
 
+  // Aerodynamics (effective values for HUD/limits)
+  // Computed each frame from attitude and Mach to reflect current airflow.
+  private aeroCdEff: number = 0.3;
+  private aeroAreaEff: number = 10;
+  private lastMach: number = 0;
+  private lastAoADeg: number = 0;
+
   // Attitude control (slow turning)
   private turnLeft: boolean = false;
   private turnRight: boolean = false;
@@ -119,6 +135,16 @@ export class GameEngine {
     // Initialize game state first
     this.initializeGameState();
     
+    // Engine sound (put file at public/sounds/rocket-launch-306441.mp3)
+    this.sound = new SoundSystem(SoundPaths.engine);
+    this.sound.setMuted(!isSoundEnabled());
+    // One-shot SFX (put files under public/sounds)
+    this.sfx = {
+      explosion: new SfxPlayer(),
+      success: new SfxPlayer(),
+      start: new SfxPlayer(),
+    };
+    
     // Load shown facts from localStorage and schedule first fact
     this.loadShownFacts();
     this.nextFactInterval = 30 + Math.random() * 30;
@@ -139,6 +165,43 @@ export class GameEngine {
     
     // Setup event listeners
     this.setupEventListeners();
+  }
+
+  /**
+   * Check and play success sounds for reaching space and stable orbit.
+   */
+  private checkSuccessSounds(): void {
+    const world = this.gameState.world;
+    const pos = this.gameState.rocket.position;
+    const vel = this.gameState.rocket.velocity;
+    const alt = world.getAltitude(pos.magnitude());
+
+    // Reached space (Kármán line ~100 km)
+    if (!this.successSpacePlayed && alt >= 100_000) {
+      this.successSpacePlayed = true;
+      this.sfx?.success.play(SoundPaths.success, 0.7).catch(()=>{});
+    }
+
+    // Stable orbit: closed ellipse with perigee above 80 km
+    if (!this.successOrbitPlayed) {
+      const mu = world.gravitationalParameter as any as number;
+      const rp = (() => {
+        const r0 = pos.magnitude();
+        const v2 = vel.x * vel.x + vel.y * vel.y;
+        const rv = pos.x * vel.x + pos.y * vel.y;
+        const eX = (1 / mu) * ((v2 - mu / r0) * pos.x - rv * vel.x);
+        const eY = (1 / mu) * ((v2 - mu / r0) * pos.y - rv * vel.y);
+        const e = Math.hypot(eX, eY);
+        const h = Math.abs(pos.x * vel.y - pos.y * vel.x);
+        const rpLocal = h * h / (mu * (1 + e));
+        return rpLocal;
+      })();
+      const periAlt = rp - world.planetRadius;
+      if (isFinite(periAlt) && periAlt > 80_000) {
+        this.successOrbitPlayed = true;
+        this.sfx?.success.play(SoundPaths.success, 0.9).catch(()=>{});
+      }
+    }
   }
 
   /**
@@ -383,6 +446,8 @@ export class GameEngine {
     this.isRunning = true;
     this.gameState.isRunning = true;
     this.lastTime = performance.now();
+    // Game start sound (short UI cue)
+    this.sfx?.start.play(SoundPaths.start, 0.7).catch(()=>{});
     this.gameLoop();
 
     console.log('Game started');
@@ -430,6 +495,7 @@ export class GameEngine {
   restart(): void {
     console.log('🔄 Restarting game...');
     this.stop();
+    this.sound?.stopEngine();
     
     // Reset game over and explosion states
     this.isGameOver = false;
@@ -596,6 +662,9 @@ export class GameEngine {
     // Facts update/spawn after camera updates so positioning is stable
     this.updateFactBubbles(deltaTime);
     this.maybeSpawnFact();
+
+    // Big success cues (audio)
+    this.checkSuccessSounds();
   }
 
   /**
@@ -665,8 +734,10 @@ export class GameEngine {
 
     // Compute a reference terminal velocity and set a max allowed speed factor above it
     const mass = this.rocketBody.mass;
-    const cd = this.rocketConfig.dragCoefficient;
-    const area = this.rocketConfig.crossSectionalArea;
+    // Use effective Cd·A matching our aero model
+    const cd = this.aeroCdEff;
+    const area = this.aeroAreaEff;
+    // Terminal velocity is used as a soft reference, not a hard cap.
     const vTerm = AtmosphericPhysics.calculateTerminalVelocity(mass, density, cd, area, gravity);
     // Allow a buffer above terminal velocity for powered ascent/re-entry glides
     const vMax = (isFinite(vTerm) ? vTerm : 10_000) * 1.25 + 50; // reference speed, not a hard cap
@@ -800,12 +871,13 @@ export class GameEngine {
         this.gameState.rocket.isEngineIgnited = false;
         this.gameState.rocket.throttle = 0;
         console.log('🔥 Fuel depleted! Engines automatically shut down.');
+        this.sound?.stopEngine();
       }
     }
 
     // Apply atmospheric drag
     const altitude = this.gameState.world.getAltitude(this.rocketBody.position.magnitude());
-    if (altitude < 100_000) {
+    if (altitude < 80_000) {
       // Only apply drag in atmosphere
       const dragForce = this.calculateDragForce();
       this.rocketBody.applyForce(dragForce);
@@ -855,13 +927,77 @@ export class GameEngine {
    */
   private calculateDragForce(): Vector2 {
     const altitude = this.gameState.world.getAltitude(this.rocketBody.position.magnitude());
+    // Strictly no aerodynamic effect at/above 80 km
+    if (altitude >= 80_000) {
+      this.aeroCdEff = this.rocketConfig.dragCoefficient;
+      this.aeroAreaEff = this.rocketConfig.crossSectionalArea;
+      this.lastMach = 0;
+      this.lastAoADeg = 0;
+      return Vector2.zero();
+    }
+    // Only compute in appreciable atmosphere; density decays fast, but clamp to <80 km focus
     const density = this.gameState.world.getAtmosphericDensity(altitude);
 
+    // Air-relative velocity (air moves with planet rotation). This makes
+    // near-ground speed more realistic. We subtract ground wind (rotation).
+    const airVel = this.rocketBody.velocity.subtract(this.getGroundVelocityAt(this.rocketBody.position));
+    const speed = airVel.magnitude();
+    if (speed < 0.01 || density <= 0) {
+      this.aeroCdEff = this.rocketConfig.dragCoefficient;
+      this.aeroAreaEff = this.rocketConfig.crossSectionalArea;
+      this.lastMach = 0;
+      this.lastAoADeg = 0;
+      return Vector2.zero();
+    }
+
+    // Angle of attack: angle between rocket forward and the air flow,
+    // computed via dot product and arccos.
+    const fwd = new Vector2(-Math.sin(this.rocketBody.rotation), Math.cos(this.rocketBody.rotation));
+    const flow = airVel.multiply(-1 / speed); // unit vector opposite velocity
+    const dot = Math.max(-1, Math.min(1, fwd.x * flow.x + fwd.y * flow.y));
+    const aoa = Math.acos(dot); // radians
+
+    // Simple Mach estimate with our speed of sound model.
+    const a = this.gameState.world.getSpeedOfSound(altitude);
+    const mach = speed / Math.max(1, a);
+
+    // Effective reference area varies with attitude (front-on vs side-on)
+    // Front area = config area; side area ~6x for a slender rocket.
+    // Not real CFD, just simple and clear.
+    const aFront = this.rocketConfig.crossSectionalArea;
+    const sideMul = 6; // side-on projected area multiplier
+    const sin2 = Math.sin(aoa) * Math.sin(aoa);
+    const cos2 = 1 - sin2;
+    const areaEff = aFront * (cos2 + sideMul * sin2);
+
+    // Base Cd from config; grow with AoA and add a transonic bump around Mach 1.
+    const cdBase = this.rocketConfig.dragCoefficient; // ~0.3
+    // AoA factor (0 at 0°, ~+4x at 90°)
+    const cdAoA = 1 + 4 * sin2;
+    // Mach factor: bump near M≈1, mild rise into supersonic
+    let cdMach = 1;
+    if (mach >= 0.8 && mach <= 1.2) {
+      // Peak at M=1 (triangle bump up to +1.5x)
+      const t = 1 - Math.abs(mach - 1) / 0.4; // 0..1
+      cdMach = 1 + 1.5 * Math.max(0, t);
+    } else if (mach > 1.2) {
+      // Mild increase up to +30% by M≈3
+      cdMach = 1.1 + 0.1 * Math.min(1, (mach - 1.2) / 1.8);
+    }
+
+    const cdEff = cdBase * cdAoA * cdMach;
+
+    // Store effective values for HUD/limits so UI can show what we use
+    this.aeroCdEff = cdEff;
+    this.aeroAreaEff = areaEff;
+    this.lastMach = mach;
+    this.lastAoADeg = (aoa * 180) / Math.PI;
+
     return AtmosphericPhysics.calculateDragForce(
-      this.rocketBody.velocity,
+      airVel,
       density,
-      this.rocketConfig.dragCoefficient,
-      this.rocketConfig.crossSectionalArea
+      cdEff,
+      areaEff
     );
   }
 
@@ -875,8 +1011,9 @@ export class GameEngine {
     this.gameState.rocket.visualRotation = this.visualRotation;
     this.gameState.rocket.mass = this.rocketBody.mass;
     this.gameState.rocket.stages = this.rocketConfig.stages;
-    this.gameState.rocket.dragCoefficient = this.rocketConfig.dragCoefficient;
-    this.gameState.rocket.crossSectionalArea = this.rocketConfig.crossSectionalArea;
+    // Expose effective values so HUD and helpers reflect current aero
+    this.gameState.rocket.dragCoefficient = this.aeroCdEff;
+    this.gameState.rocket.crossSectionalArea = this.aeroAreaEff;
     this.gameState.rocket.fuel = this.rocketConfig.stages.reduce(
       (sum, stage) => sum + stage.fuelRemaining,
       0
@@ -1468,6 +1605,11 @@ export class GameEngine {
         console.log('🧰 Pad clamps auto-released. Liftoff!');
       }
       console.log('✅ Engine start! Throttle 50%');
+      // Stage-specific loudness (upper stages a bit quieter)
+      const stageIdx = this.rocketConfig.getCurrentStageIndex();
+      this.sound?.setBaseGain(getEngineBaseGainForStage(stageIdx));
+      // Start engine sound (full start plays once, tail loops while on)
+      this.sound?.startEngine(this.gameState.rocket.throttle).catch(() => {});
       return true;
     }
     console.log('❌ No thrust available - ignition failed');
@@ -1477,12 +1619,16 @@ export class GameEngine {
   setThrottle(value: number): void {
     this.gameState.rocket.throttle = Math.max(0, Math.min(1, value));
     console.log(`Throttle set to ${(this.gameState.rocket.throttle * 100).toFixed(0)}%`);
+    if (this.gameState.rocket.isEngineIgnited) {
+      this.sound?.setThrottle(this.gameState.rocket.throttle);
+    }
   }
 
   cutEngines(): void {
     this.gameState.rocket.isEngineIgnited = false;
     this.gameState.rocket.throttle = 0;
     console.log('🔥 Engines cut! Complete engine shutdown.');
+    this.sound?.stopEngine();
   }
 
   performStaging(): boolean {
@@ -2040,6 +2186,8 @@ export class GameEngine {
       size: 30 + Math.random() * 20,
       particles: particles
     });
+    // Explosion SFX
+    this.sfx?.explosion.play(SoundPaths.explosion, 0.9).catch(()=>{});
     
     console.log('💥 BOOM! Explosion created at staging location!');
   }
@@ -2168,6 +2316,7 @@ export class GameEngine {
     // Cut engines and stop physics
     this.gameState.rocket.isEngineIgnited = false;
     this.gameState.rocket.throttle = 0;
+    this.sound?.stopEngine();
     
     // Create debris particles from rocket destruction
     const rocketPos = this.gameState.rocket.position;
