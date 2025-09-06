@@ -275,8 +275,10 @@ export class RocketConfiguration {
         name: 'First Stage',
         thrust: 480_000, // 480 kN (boosted for TWR ~2.0)
         specificImpulse: 265, // seconds (sea-level realistic)
+        seaLevelIsp: 265,
+        vacuumIsp: 300,
         propellantMass: 25_000, // 25 tons
-        dryMass: 2_000, // 2 tons
+        dryMass: 3_000, // 3 tons (a bit heavier)
         isActive: true,
         fuelRemaining: 25_000,
       },
@@ -284,8 +286,10 @@ export class RocketConfiguration {
         name: 'Second Stage',
         thrust: 120_000, // 120 kN (doubled for better TWR)
         specificImpulse: 335, // seconds (reduced slightly)
+        seaLevelIsp: 300,
+        vacuumIsp: 335,
         propellantMass: 5_000, // 5 tons
-        dryMass: 800, // 800 kg
+        dryMass: 1_200, // 1.2 tons (a bit heavier)
         isActive: false,
         fuelRemaining: 5_000,
       },

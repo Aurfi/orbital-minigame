@@ -40,7 +40,9 @@ export interface RocketState {
 export interface StageConfiguration {
   name: string;
   thrust: number; // Maximum thrust (N)
-  specificImpulse: number; // Specific impulse (s)
+  specificImpulse: number; // Specific impulse (s) – fallback/default
+  seaLevelIsp?: number;    // Optional: Isp at sea level (s)
+  vacuumIsp?: number;      // Optional: Isp in vacuum (s)
   propellantMass: number; // Initial propellant mass (kg)
   dryMass: number; // Dry mass without fuel (kg)
   isActive: boolean; // Currently active stage

@@ -714,9 +714,16 @@ export class GameEngine {
    * Smooth visual rotation for rendering only
    */
   private updateVisualAttitude(deltaTime: number): void {
-    // Render exactly the physics rotation to avoid any visual snapping.
-    // (We can reintroduce light smoothing later if needed.)
-    this.visualRotation = this.rocketBody.rotation;
+    // Light smoothing for render rotation so left/right feels smoother at 1x.
+    // Interpolate along shortest arc.
+    const a = this.visualRotation;
+    let b = this.rocketBody.rotation;
+    let d = b - a;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    const k = 10; // smoothing speed (higher = snappier)
+    const t = 1 - Math.exp(-k * Math.max(0, deltaTime));
+    this.visualRotation = a + d * t;
   }
 
   /**
@@ -1981,9 +1988,10 @@ export class GameEngine {
       }
       
       // Only create smoke if there's intensity
-      if (smokeIntensity > 0.01) {
+      if (smokeIntensity > 0.02) {
         // Create smoke particles from engine exhaust
-        const smokeFrequency = Math.max(1, Math.floor(14 * this.gameState.rocket.throttle * smokeIntensity)); // denser trail
+        // Reduced frequency for performance
+        const smokeFrequency = Math.max(1, Math.floor(6 * this.gameState.rocket.throttle * smokeIntensity));
       
       for (let i = 0; i < smokeFrequency; i++) {
         // Position smoke within the exhaust plume (about halfway down)
@@ -2003,15 +2011,15 @@ export class GameEngine {
         this.smokeParticles.push({
           pos: smokePos,
           vel: smokeVel,
-          life: (3.0 + Math.random() * 4.0) * smokeIntensity, // longer, scales with density
-          maxLife: 4.5 * smokeIntensity,
-          size: (6 + Math.random() * 12) * smokeIntensity // slightly bigger
+          life: (2.0 + Math.random() * 2.0) * smokeIntensity, // shorter life
+          maxLife: 3.0 * smokeIntensity,
+          size: (4 + Math.random() * 8) * smokeIntensity // smaller
         });
       }
       
       // Limit smoke particles to prevent performance issues
-      if (this.smokeParticles.length > 200) {
-        this.smokeParticles.splice(0, this.smokeParticles.length - 200);
+      if (this.smokeParticles.length > 120) {
+        this.smokeParticles.splice(0, this.smokeParticles.length - 120);
       }
       }
     }
@@ -2038,7 +2046,7 @@ export class GameEngine {
       smoke.life -= deltaTime;
       
       // Expand smoke over time
-      smoke.size += 10 * deltaTime;
+      smoke.size += 6 * deltaTime; // slower expansion
       
       if (smoke.life <= 0) {
         this.smokeParticles.splice(i, 1);

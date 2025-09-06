@@ -135,20 +135,34 @@ export class HUDSystem {
     ctx.fillStyle = statusColor;
     ctx.fillText(`Engines:    ${engineStatus}`, 20, y);
     
-    // Delta-V estimate (uses current ISP and remaining stages; independent of engine ON/OFF)
+    // Delta-V estimate (uses current altitude for current-stage Isp; later stages assume vacuum Isp)
     y += lineHeight;
     ctx.fillStyle = '#ffffff';
     const g0 = 9.81;
     // Compute remaining delta-v including staging dry-mass drops
     let dvTotal = 0;
     let mCurrent = mass;
+    // Helper to blend Isp based on local density (0..1)
+    const densityNow = gameState.world.getAtmosphericDensity(altitude);
+    const sea = gameState.world.surfaceDensity;
+    const vacBlend = Math.max(0, Math.min(1, 1 - densityNow / Math.max(1e-6, sea)));
     for (let i = rocket.currentStage; i < rocket.stages.length; i++) {
-      const st = rocket.stages[i];
+      const st = rocket.stages[i] as any;
       const fuel = Math.max(0, st.fuelRemaining);
-      if (fuel > 0) {
+      let isp = st.specificImpulse ?? 0;
+      if (i === rocket.currentStage) {
+        // Blend between sea-level and vacuum for current stage
+        const ispSea = st.seaLevelIsp ?? st.specificImpulse ?? 0;
+        const ispVac = st.vacuumIsp ?? st.specificImpulse ?? 0;
+        isp = ispSea + (ispVac - ispSea) * vacBlend;
+      } else {
+        // Assume upper stages burn in thin atmosphere: use vacuum Isp if available
+        isp = st.vacuumIsp ?? st.specificImpulse ?? 0;
+      }
+      if (fuel > 0 && isp > 0) {
         const mAfter = Math.max(1e-6, mCurrent - fuel);
         if (mAfter > 0 && mAfter < mCurrent) {
-          dvTotal += st.specificImpulse * g0 * Math.log(mCurrent / mAfter);
+          dvTotal += isp * g0 * Math.log(mCurrent / mAfter);
           mCurrent = mAfter;
         }
       }
