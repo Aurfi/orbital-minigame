@@ -134,9 +134,34 @@ export class HUDSystem {
     const statusColor = rocket.isEngineIgnited ? '#00ff00' : '#ff0000';
     ctx.fillStyle = statusColor;
     ctx.fillText(`Engines:    ${engineStatus}`, 20, y);
+    
+    // Delta-V estimate (uses current ISP and remaining stages; independent of engine ON/OFF)
+    y += lineHeight;
+    ctx.fillStyle = '#ffffff';
+    const g0 = 9.81;
+    // Compute remaining delta-v including staging dry-mass drops
+    let dvTotal = 0;
+    let mCurrent = mass;
+    for (let i = rocket.currentStage; i < rocket.stages.length; i++) {
+      const st = rocket.stages[i];
+      const fuel = Math.max(0, st.fuelRemaining);
+      if (fuel > 0) {
+        const mAfter = Math.max(1e-6, mCurrent - fuel);
+        if (mAfter > 0 && mAfter < mCurrent) {
+          dvTotal += st.specificImpulse * g0 * Math.log(mCurrent / mAfter);
+          mCurrent = mAfter;
+        }
+      }
+      const hasLater = i < rocket.stages.length - 1;
+      if (hasLater) {
+        mCurrent = Math.max(1e-6, mCurrent - st.dryMass);
+      }
+    }
+    const dvText = dvTotal >= 1000 ? `${(dvTotal/1000).toFixed(2)} km/s` : `${dvTotal.toFixed(0)} m/s`;
+    ctx.fillText(`Delta-V:   ${dvText}`, 20, y);
 
     // Draw fuel gauge
-    y += lineHeight + 10;
+    y += 10; // small spacer before gauge
     this.drawFuelGauge(ctx, 20, y, fuel, rocket, gameState);
 
     // Draw mission timer and restart button in top-right corner
@@ -321,7 +346,9 @@ export class HUDSystem {
     }
     // Clamp overall outer scale so escape doesn't blow up the map
     const maxDisplayR = Math.min(maxR, planetRadiusWorld * 6);
-    const aMaxDynamic = Math.max(10_000, maxDisplayR - planetRadiusWorld);
+    // Ensure a comfortable outer scale so near-ground altitudes do not jump too far
+    // Set a minimum of ~1000 km to make ~500 km sit near mid-radius.
+    const aMaxDynamic = Math.max(1_000_000, maxDisplayR - planetRadiusWorld);
 
     // Helper: map world (wx, wy) to minimap using logarithmic radial scaling.
     // Log scale keeps far points visible without crushing near ones.
@@ -342,8 +369,13 @@ export class HUDSystem {
       }
 
       // Log radial mapping: 0 -> planet edge, aMaxDynamic -> panel edge.
-      const aRef = 10_000;    // reference scale for curve shape (10 km)
-      const tRadial = Math.min(1, Math.log1p(alt / aRef) / Math.log1p(aMaxDynamic / aRef));
+      // Make early altitudes (e.g., 50 km) stay visually close to the planet.
+      // Target: ~50% radius near ~250 km rather than ~50 km.
+      const aRef = 250_000; // reference scale: balances near-ground vs orbit
+      const tLog = Math.min(1, Math.log1p(alt / aRef) / Math.log1p(aMaxDynamic / aRef));
+      // Compress low altitudes so ~500 km is around mid-radius
+      const shape = 1.6; // >1 compresses early values
+      const tRadial = Math.pow(tLog, shape);
       const rMini = planetRadiusMini + (panelEdgeRadius - planetRadiusMini) * tRadial;
 
       // Convert unit vector to mini coords (y-up to screen space)

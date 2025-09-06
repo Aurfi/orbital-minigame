@@ -243,18 +243,25 @@ export class RocketConfiguration {
   getRemainingDeltaV(): number {
     let totalDeltaV = 0;
     let currentMass = this.getCurrentMass();
-
-    // Calculate delta-v for each stage using rocket equation
-    for (let i = 0; i < this.stages.length; i++) {
+    // Start from current active stage and above
+    const startIndex = this.getCurrentStageIndex() >= 0 ? this.getCurrentStageIndex() : 0;
+    for (let i = startIndex; i < this.stages.length; i++) {
       const stage = this.stages[i];
-      if (stage.fuelRemaining > 0) {
-        const massAfterBurn = currentMass - stage.fuelRemaining;
-        const deltaV = stage.specificImpulse * 9.81 * Math.log(currentMass / massAfterBurn);
-        totalDeltaV += deltaV;
-        currentMass = massAfterBurn;
+      const fuel = Math.max(0, stage.fuelRemaining);
+      if (fuel > 0) {
+        const massAfterBurn = Math.max(1e-6, currentMass - fuel);
+        if (massAfterBurn > 0 && massAfterBurn < currentMass) {
+          const deltaV = stage.specificImpulse * 9.81 * Math.log(currentMass / massAfterBurn);
+          totalDeltaV += Math.max(0, deltaV);
+          currentMass = massAfterBurn;
+        }
+      }
+      // If there are later stages, jettison dry mass of this stage (staging)
+      const hasLater = i < this.stages.length - 1;
+      if (hasLater) {
+        currentMass = Math.max(1e-6, currentMass - stage.dryMass);
       }
     }
-
     return totalDeltaV;
   }
 
