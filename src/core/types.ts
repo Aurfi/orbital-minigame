@@ -18,14 +18,23 @@ export interface RocketState {
   position: Vector2;
   velocity: Vector2;
   rotation: number;
+  visualRotation?: number; // Smoothed rotation for rendering only
+  engineWorldPos?: Vector2; // World coordinates of engine exit
+  engineDownDir?: Vector2;  // Direction pointing out of the engine (away from rocket)
   mass: number;
   fuel: number;
   throttle: number;
   isEngineIgnited: boolean;
   hasEverLaunched: boolean; // Track if rocket has ever been ignited
+  isClamped?: boolean; // Held by pad clamps
+  isOnGround?: boolean; // Resting on ground support (not clamped)
   currentStage: number;
   stages: StageConfiguration[];
   exhaustY?: number; // Y position of exhaust from active stage
+  exhaustLength?: number; // Current exhaust plume length (px in local units)
+  exhaustWidth?: number;  // Current exhaust plume width
+  dragCoefficient?: number;
+  crossSectionalArea?: number;
 }
 
 export interface StageConfiguration {

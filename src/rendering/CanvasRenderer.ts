@@ -249,6 +249,37 @@ export class CanvasRenderer {
   }
 
   /**
+   * Fill screen with a radial gradient defined in world coordinates.
+   * Center and radii are mapped to screen space using the current camera.
+   */
+  fillRadialGradientWorld(
+    centerWorld: Vector2,
+    innerRadiusWorld: number,
+    outerRadiusWorld: number,
+    innerColor: string,
+    outerColor: string
+  ): void {
+    const ctx = this.context;
+    const centerScreen = this.worldToScreen(centerWorld);
+    const zoom = this.camera ? this.camera.zoom : 1;
+    const r0 = Math.max(0, innerRadiusWorld * zoom);
+    const r1 = Math.max(r0 + 1, outerRadiusWorld * zoom);
+
+    ctx.save();
+    // Draw in screen space
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const grad = ctx.createRadialGradient(centerScreen.x, centerScreen.y, r0, centerScreen.x, centerScreen.y, r1);
+    grad.addColorStop(0, innerColor);
+    grad.addColorStop(1, outerColor);
+    ctx.fillStyle = grad;
+    // Fill the visible canvas (CSS pixels)
+    const w = this.canvas.width / this.pixelRatio;
+    const h = this.canvas.height / this.pixelRatio;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  /**
    * Convert screen coordinates to world coordinates
    * @param screenPos Screen position
    * @returns World position

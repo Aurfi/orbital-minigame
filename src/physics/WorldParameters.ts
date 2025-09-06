@@ -1,14 +1,16 @@
 // World parameters configuration for toy-Earth physics
 export class WorldParameters {
-  // Planetary constants (toy-Earth scale)
-  public readonly planetRadius: number = 600_000; // 600 km radius
+  // Planetary constants (cartoon small Earth, same surface g)
+  public readonly planetRadius: number = 350_000; // 350 km radius (smaller planet)
   public readonly surfaceGravity: number = 9.81; // m/s²
   public readonly gravitationalParameter: number; // μ = g₀ · R²
 
-  // Atmospheric constants
+  // Atmospheric constants (keep original Earth-like feel)
   public readonly atmosphereScaleHeight: number = 7_000; // 7 km scale height
   public readonly surfaceDensity: number = 1.2; // kg/m³ at sea level
   public readonly maxDynamicPressure: number = 50_000; // 50 kPa max-Q limit
+  // Planet rotation (rad/s); Earth ~7.2921159e-5
+  public readonly earthRotationRate: number = 7.2921159e-5;
 
   // Rocket constants
   public readonly defaultDragCoefficient: number = 0.3;
@@ -17,6 +19,7 @@ export class WorldParameters {
   constructor() {
     // Calculate gravitational parameter from surface gravity and radius
     this.gravitationalParameter = this.surfaceGravity * this.planetRadius * this.planetRadius;
+    // Atmosphere parameters remain unscaled for familiar feel
   }
 
   /**

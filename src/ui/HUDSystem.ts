@@ -1,12 +1,28 @@
 import { CanvasRenderer } from '../rendering/CanvasRenderer.js';
 import { GameState } from '../core/types.js';
 import { Vector2 } from '../physics/Vector2.js';
+import { AtmosphericPhysics } from '../physics/AtmosphericPhysics.js';
 
 export class HUDSystem {
   private canvas: HTMLCanvasElement;
+  // Mini-globe rotation state
+  private miniAngle: number = 0; // radians
+  private lastMiniTime: number = 0;
+  // Mini-map trajectory caching
+  private cachedPath: Array<{ x: number; y: number }> | null = null;
+  private lastProjTimeMs: number = 0;
+  private lastVel: { x: number; y: number } | null = null;
+  private lastStage: number = -1;
+  private lastThrusting: boolean = false;
+  private cachedInfo: { apoAlt: number; apoPos: { x: number; y: number } | null; periAlt: number; periPos: { x: number; y: number } | null; stableOrbit: boolean } | null = null;
+  // Mini-globe continents geometry (stable, no per-frame randomness)
+  private miniPatches: Array<{ theta: number; rx: number; ry: number; rot: number }> = [];
+  private miniAngleOffset: number = 0; // to align start over a continent
+  private miniAligned: boolean = false;
   
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+    this.initMiniGlobeGeometry();
   }
 
   /**
@@ -22,9 +38,20 @@ export class HUDSystem {
     // Reset transformation to screen coordinates for HUD
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     
-    // Calculate flight data
-    const altitude = gameState.world.getAltitude(gameState.rocket.position.magnitude());
-    const velocity = gameState.rocket.velocity.magnitude();
+    // Calculate flight data (base altitude at engine exit)
+    const pos = gameState.rocket.position;
+    const rmag = pos.magnitude();
+    const exY = (gameState.rocket as any).exhaustY ?? 0; // local Y of stage bottom
+    const bottomDistance = Math.max(0, -exY) + 6; // add small nozzle drop
+    const altitude = Math.max(0, rmag - gameState.world.planetRadius - bottomDistance);
+    // Ground-relative velocity near the surface to avoid showing rotation speed
+    const u = rmag > 1e-6 ? new Vector2(pos.x / rmag, pos.y / rmag) : new Vector2(0, 1);
+    const tVec = new Vector2(-u.y, u.x);
+    const omega = (gameState.world as any).earthRotationRate || 0;
+    const groundVel = tVec.multiply(omega * rmag);
+    const rawVel = gameState.rocket.velocity;
+    const relVel = rawVel.subtract(groundVel);
+    const velocity = (gameState.rocket.isClamped || altitude < 1000) ? relVel.magnitude() : rawVel.magnitude();
     const mass = gameState.rocket.mass;
     const fuel = gameState.rocket.fuel;
     const throttle = gameState.rocket.throttle;
@@ -48,7 +75,7 @@ export class HUDSystem {
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
 
-    // Draw background panel - taller for fuel gauge
+    // Draw background panel - room for fuel gauge
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(10, 10, 280, 220);
     ctx.strokeStyle = '#ffffff';
@@ -64,7 +91,31 @@ export class HUDSystem {
     // Format and display data
     ctx.fillText(`Altitude:   ${this.formatNumber(altitude, 0)} m`, 20, y);
     y += lineHeight;
-    ctx.fillText(`Velocity:   ${this.formatNumber(velocity, 1)} m/s`, 20, y);
+    // Velocity + safety indicator (color-coded by proximity to atmospheric limit)
+    ctx.fillStyle = '#ffffff';
+    const velText = `Velocity:   ${this.formatNumber(velocity, 1)} m/s`;
+    ctx.fillText(velText, 20, y);
+
+    // Safety indicator based on vMax (derived from terminal velocity)
+    const density = gameState.world.getAtmosphericDensity(altitude);
+    const gravity = gameState.world.getGravitationalAcceleration(gameState.rocket.position.magnitude());
+    const cd = (rocket.dragCoefficient ?? gameState.world.defaultDragCoefficient ?? 0.3);
+    const area = (rocket.crossSectionalArea ?? gameState.world.defaultCrossSectionalArea ?? 10);
+    const vTerm = AtmosphericPhysics.calculateTerminalVelocity(mass, density, cd, area, gravity);
+    const vMax = (isFinite(vTerm) ? vTerm : 10_000) * 1.25 + 50;
+    // Determine label and color: Safe (green), Unsafe (orange), Too fast (red)
+    let label = 'Safe';
+    let safetyColor = '#00ff66'; // green
+    if (altitude < 80_000 && isFinite(vTerm)) {
+      const ratio = velocity / Math.max(1, vMax);
+      if (ratio > 1.10) { label = 'Too fast'; safetyColor = '#ff3333'; }
+      else if (ratio > 0.85) { label = 'Unsafe'; safetyColor = '#ff9933'; }
+    }
+    ctx.fillStyle = safetyColor;
+    // Place indicator near the right side of the panel on the same line
+    ctx.fillText(label, 210, y);
+    // Reset color so only the 'Safe' text is colorized
+    ctx.fillStyle = '#ffffff';
     y += lineHeight;
     ctx.fillText(`Mass:       ${this.formatNumber(mass, 0)} kg`, 20, y);
     y += lineHeight;
@@ -74,6 +125,7 @@ export class HUDSystem {
     y += lineHeight;
     ctx.fillText(`ISP:        ${Math.round(currentISP)} s`, 20, y);
     y += lineHeight;
+    ctx.fillStyle = '#ffffff';
     ctx.fillText(`Stage:      ${rocket.currentStage + 1}`, 20, y);
 
     // Engine status indicator
@@ -93,34 +145,443 @@ export class HUDSystem {
 
     // Position indicator removed - was not useful
 
-    // Draw controls help
+    // Mini-globe rotation: use world's rotation rate and game time
+    const earthAngle = (gameState.currentTime || 0) * (gameState.world as any).earthRotationRate;
+    this.miniAngle = earthAngle; // base angle
+
+    // Mini-planet map in bottom-right corner
+    this.drawMiniMap(ctx, gameState);
+
+    // Draw controls help (dynamic size)
+    ctx.font = '12px monospace';
+    const lines = [
+      'Controls:',
+      'SPACE - Start engine',
+      'T - Full throttle',
+      'G - Zero throttle',
+      'B - Cut engines',
+      'Up/Down - Throttle ±10%',
+      'Left/Right - Turn',
+      'S - Stage',
+      'Scroll - Zoom'
+    ];
+    let maxW = 0;
+    for (const ln of lines) {
+      const w = ctx.measureText(ln).width;
+      if (w > maxW) maxW = w;
+    }
+    const pad = 10;
+    const lineH = 15;
+    const panelW = Math.ceil(maxW) + pad * 2;
+    const panelH = lineH * lines.length + pad * 2;
+    const panelX = 10;
+    const panelY = this.canvas.height - panelH - 20; // start higher and fit content
+
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(10, this.canvas.height - 140, 200, 130);
+    ctx.fillRect(panelX, panelY, panelW, panelH);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(10, this.canvas.height - 140, 200, 130);
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
-    let helpY = this.canvas.height - 120;
-    ctx.fillText('Controls:', 20, helpY);
-    helpY += 15;
-    ctx.fillText('SPACE - Ignite', 20, helpY);
-    helpY += 15;
-    ctx.fillText('Z - Full throttle', 20, helpY);
-    helpY += 15;
-    ctx.fillText('X - Zero throttle', 20, helpY);
-    helpY += 15;
-    ctx.fillText('C - Cut engines', 20, helpY);
-    helpY += 15;
-    ctx.fillText('S - Stage', 20, helpY);
-    helpY += 15;
-    ctx.fillText('Scroll - Zoom', 20, helpY);
-    helpY += 15;
-    ctx.fillText('R - Restart', 20, helpY);
+    let helpY = panelY + pad + 12;
+    for (const ln of lines) {
+      ctx.fillText(ln, panelX + pad, helpY);
+      helpY += lineH;
+    }
+    // Auto-release clamps on ignite; no manual key needed
 
     // Restore transformation state
     ctx.restore();
+  }
+
+  /**
+   * Initialize stable geometry for mini-globe continents (polar view)
+   */
+  private initMiniGlobeGeometry(): void {
+    // Angles roughly around the limb, sized to hint landmasses from a north-pole view
+    this.miniPatches = [
+      { theta: -2.2, rx: 0.30, ry: 0.16, rot: -0.2 }, // large landmass hint (Americas)
+      { theta: -0.4, rx: 0.32, ry: 0.17, rot: 0.15 }, // large landmass hint (Eurasia)
+      { theta:  1.6, rx: 0.26, ry: 0.15, rot: 0.35 }, // secondary mass hint (Africa)
+    ];
+  }
+
+  /**
+   * Mini 2D planet view with rocket and projected path
+   * Drawn in bottom-right corner as a HUD overlay
+   */
+  private drawMiniMap(ctx: CanvasRenderingContext2D, gameState: GameState): void {
+    const margin = 18;
+    const size = 160;
+    const x = this.canvas.width - size - margin;
+    const y = this.canvas.height - size - margin;
+
+    // Panel
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = '#88aaff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, size, size);
+
+    // Planet disc centered in panel
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const planetRadiusWorld = gameState.world.planetRadius;
+    const planetRadiusMini = Math.min(size * 0.24, size * 0.26); // smaller earth on HUD
+    const panelEdgeRadius = size / 2 - 6; // keep a small border inside the panel
+
+    // Planet ocean base
+    ctx.beginPath();
+    ctx.arc(cx, cy, planetRadiusMini, 0, Math.PI * 2);
+    ctx.fillStyle = '#0b3766'; // ocean color
+    ctx.fill();
+    ctx.strokeStyle = '#1b4e83';
+    ctx.stroke();
+
+    // Rotating polar view: north pole at center with ice cap,
+    // continents hinted near the limb (equatorial belt) and rotating.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, planetRadiusMini, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(cx, cy);
+    // Align continents so rocket starts over land (first render)
+    if (!this.miniAligned) {
+      const phi = Math.atan2(gameState.rocket.position.y, gameState.rocket.position.x);
+      // choose closest patch
+      let best = 0, bestd = 1e9;
+      for (let i = 0; i < this.miniPatches.length; i++) {
+        const d = Math.abs(((phi - this.miniPatches[i].theta + Math.PI) % (2 * Math.PI)) - Math.PI);
+        if (d < bestd) { bestd = d; best = i; }
+      }
+      this.miniAngleOffset = phi - this.miniPatches[best].theta;
+      this.miniAligned = true;
+    }
+    const effectiveAngle = this.miniAngle + this.miniAngleOffset;
+    ctx.rotate(effectiveAngle);
+
+    const globeR = planetRadiusMini;
+
+    // Polar ice cap (north pole at center)
+    const capR = globeR * 0.28; // bigger polar cap
+    const iceGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, capR);
+    iceGrad.addColorStop(0, 'rgba(240, 250, 255, 0.95)');
+    iceGrad.addColorStop(1, 'rgba(220, 240, 255, 0.65)');
+    ctx.fillStyle = iceGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, capR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Add some cap irregularity (lobes)
+    ctx.fillStyle = 'rgba(245, 252, 255, 0.75)';
+    ctx.beginPath();
+    ctx.ellipse(-0.06 * globeR, -0.02 * globeR, 0.12 * globeR, 0.08 * globeR, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(0.08 * globeR, -0.04 * globeR, 0.10 * globeR, 0.06 * globeR, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(-0.02 * globeR, 0.07 * globeR, 0.08 * globeR, 0.05 * globeR, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Continents as small patches around a ring near the limb (equator),
+    // slightly transparent to hint curvature at the edge.
+    const ringR = globeR * 0.86; // closer to limb so patches clip at edge
+    ctx.fillStyle = '#3aa457';
+    ctx.globalAlpha = 0.72;
+    for (const p of this.miniPatches) {
+      const px = ringR * Math.cos(p.theta);
+      const py = ringR * Math.sin(p.theta);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(p.rot);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, globeR * p.rx, globeR * p.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Helper: map world (wx, wy) to minimap using logarithmic radial scaling
+    const worldToMini = (wx: number, wy: number) => {
+      const rWorld = Math.hypot(wx, wy);
+      let ux = rWorld > 0 ? wx / rWorld : 0;
+      let uy = rWorld > 0 ? wy / rWorld : 1; // default up
+
+      // In the ground frame (alt < 20 km), rotate rocket vector with globe so marker stays over land
+      const alt = Math.max(0, rWorld - planetRadiusWorld);
+      if (alt < 20_000) {
+        const ang = this.miniAngle; // earth angle
+        const cosA = Math.cos(-ang), sinA = Math.sin(-ang);
+        const rx = ux * cosA - uy * sinA;
+        const ry = ux * sinA + uy * cosA;
+        ux = rx; uy = ry;
+      }
+
+      // Log radial mapping: 0 -> planet edge, aMax -> panel edge
+      const aMax = 2_000_000; // 2,000 km target edge distance
+      const aRef = 10_000;    // reference scale for curve shape (10 km)
+      const tRadial = Math.min(1, Math.log1p(alt / aRef) / Math.log1p(aMax / aRef));
+      const rMini = planetRadiusMini + (panelEdgeRadius - planetRadiusMini) * tRadial;
+
+      // Convert unit vector to mini coords (y-up to screen space)
+      const dx = ux * rMini;
+      const dy = uy * rMini;
+      const sx = cx + dx;
+      const sy = cy - dy;
+      return { sx, sy };
+    };
+
+    // Draw projected trajectory (no thrust/drag) up to 8 hours or until collision/orbit/escape
+    const info = this.getProjectedPath(gameState, 8 * 3600, 1.0);
+    const pathPts = this.cachedPath || [];
+    if (pathPts.length > 1) {
+      const maxDots = 1000; // cap for performance
+      const step = Math.max(1, Math.floor(pathPts.length / maxDots));
+      const dotR = 1.1;
+      ctx.fillStyle = 'rgba(200,220,255,0.9)';
+      for (let i = 0; i < pathPts.length; i += step) {
+        const p = worldToMini(pathPts[i].x, pathPts[i].y);
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Apoapsis and periapsis markers
+      if (info.apoPos) {
+        const ap = worldToMini(info.apoPos.x, info.apoPos.y);
+        ctx.fillStyle = '#00ff66'; // green
+        ctx.beginPath();
+        ctx.arc(ap.sx, ap.sy, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (info.periPos) {
+        const pp = worldToMini(info.periPos.x, info.periPos.y);
+        ctx.fillStyle = '#ff3333'; // red
+        ctx.beginPath();
+        ctx.arc(pp.sx, pp.sy, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Legend above panel (stacked)
+      const apoY = y - 24;
+      const periY = y - 10;
+      ctx.font = '12px monospace';
+      // Apoapsis label (green)
+      ctx.fillStyle = '#00ff66';
+      ctx.fillText(`Apoapsis: ${(info.apoAlt / 1000).toFixed(0)} km`, x, apoY);
+      // Periapsis label (red)
+      ctx.fillStyle = '#ff6666';
+      ctx.fillText(`Periapsis: ${(info.periAlt / 1000).toFixed(0)} km`, x, periY);
+
+      // Stable orbit notice
+      if (info.stableOrbit) {
+        ctx.fillStyle = '#00ff99';
+        ctx.fillText('Stable orbit achieved! 🎉', x, y - 38);
+      }
+    }
+
+    // Rocket marker as a small X
+    const rpos = gameState.rocket.position;
+    const m = worldToMini(rpos.x, rpos.y);
+    const r = 4;
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m.sx - r, m.sy - r);
+    ctx.lineTo(m.sx + r, m.sy + r);
+    ctx.moveTo(m.sx - r, m.sy + r);
+    ctx.lineTo(m.sx + r, m.sy - r);
+    ctx.stroke();
+
+    // Label
+    ctx.font = '11px monospace';
+    ctx.fillStyle = '#a8c0ff';
+    ctx.fillText('Orbit view', x + 8, y + 14);
+  }
+
+  /**
+   * Projected path integrator (simple two-body, no thrust/drag)
+   * steps: number of seconds (dtSeconds per step)
+   */
+  private computeProjectedPath(gameState: GameState, steps: number, dtSeconds: number): Array<{ x: number; y: number }> {
+    const mu = gameState.world.gravitationalParameter as unknown as number;
+    const out: Array<{ x: number; y: number }> = [];
+    // Clone current state
+    let rx = gameState.rocket.position.x;
+    let ry = gameState.rocket.position.y;
+    let vx = gameState.rocket.velocity.x;
+    let vy = gameState.rocket.velocity.y;
+    const dt = Math.max(0.05, dtSeconds);
+    for (let i = 0; i < steps; i++) {
+      const r2 = rx * rx + ry * ry;
+      const r = Math.sqrt(r2);
+      // Stop if would hit the planet
+      if (r <= gameState.world.planetRadius) break;
+      // Gravity accel: -mu * r_hat / r^2
+      const invr3 = 1 / (r2 * r);
+      const ax = -mu * rx * invr3;
+      const ay = -mu * ry * invr3;
+      // Semi-implicit Euler
+      vx += ax * dt;
+      vy += ay * dt;
+      rx += vx * dt;
+      ry += vy * dt;
+      // Save every step; caller will subsample if needed
+      out.push({ x: rx, y: ry });
+    }
+    return out;
+  }
+
+  /**
+   * Cached accessor for projected path. Recomputes at most 1 Hz or when state changes.
+   */
+  private getProjectedPath(gameState: GameState, steps: number, dtSeconds: number): { apoAlt: number; apoPos: { x: number; y: number } | null; periAlt: number; periPos: { x: number; y: number } | null; stableOrbit: boolean } {
+    const now = Date.now();
+    const thrusting = gameState.rocket.isEngineIgnited && gameState.rocket.throttle > 0;
+    const vel = gameState.rocket.velocity;
+    const stage = gameState.rocket.currentStage;
+
+    // Decide if we need to recompute
+    let needRecalc = false;
+
+    // Always recompute if we have no cache
+    if (!this.cachedPath) needRecalc = true;
+
+    // If thrusting state or stage changed, recompute
+    if (this.lastThrusting !== thrusting || this.lastStage !== stage) needRecalc = true;
+
+    // If velocity changed significantly (magnitude or direction), recompute
+    if (this.lastVel) {
+      const dvx = vel.x - this.lastVel.x;
+      const dvy = vel.y - this.lastVel.y;
+      const dv = Math.hypot(dvx, dvy);
+      // Thresholds: 0.5 m/s magnitude change triggers recompute
+      if (dv > 0.5) needRecalc = true;
+      else {
+        // Check direction change (~0.5°)
+        const v1 = this.lastVel;
+        const dot = v1.x * vel.x + v1.y * vel.y;
+        const m1 = Math.hypot(v1.x, v1.y);
+        const m2 = Math.hypot(vel.x, vel.y);
+        if (m1 > 1e-3 && m2 > 1e-3) {
+          const c = Math.min(1, Math.max(-1, dot / (m1 * m2)));
+          const ang = Math.acos(c); // radians
+          if (ang > (0.5 * Math.PI / 180)) needRecalc = true; // >0.5°
+        }
+      }
+    } else {
+      needRecalc = true;
+    }
+
+    // Rate limit to ~1 Hz
+    if (!needRecalc && (now - this.lastProjTimeMs) < 1000 && this.cachedInfo) return this.cachedInfo;
+
+    // If not thrusting and velocity hasn't changed and we have cache, keep it
+    if (!needRecalc && this.cachedInfo) return this.cachedInfo;
+
+    // Recompute
+    const res = this.computeProjectedPathInfo(gameState, steps, dtSeconds);
+    const path = res.points;
+    this.cachedPath = path;
+    this.lastProjTimeMs = now;
+    this.lastVel = { x: vel.x, y: vel.y };
+    this.lastStage = stage;
+    this.lastThrusting = thrusting;
+    this.cachedInfo = { apoAlt: res.apoAlt, apoPos: res.apoPos, periAlt: res.periAlt, periPos: res.periPos, stableOrbit: res.stableOrbit };
+    return this.cachedInfo;
+  }
+
+  /**
+   * Compute trajectory points plus apoapsis/periapsis and stable-orbit detection.
+   */
+  private computeProjectedPathInfo(gameState: GameState, simSeconds: number, _dtSeconds: number): { points: Array<{ x: number; y: number }>; apoAlt: number; apoPos: { x: number; y: number } | null; periAlt: number; periPos: { x: number; y: number } | null; stableOrbit: boolean } {
+    const mu = gameState.world.gravitationalParameter as unknown as number;
+    const R = gameState.world.planetRadius;
+    const out: Array<{ x: number; y: number }> = [];
+
+    // Clone current state
+    let rx = gameState.rocket.position.x;
+    let ry = gameState.rocket.position.y;
+    let vx = gameState.rocket.velocity.x;
+    let vy = gameState.rocket.velocity.y;
+
+    // Adaptive timestep: precise for the first hour, then progressively coarser
+    const pickDt = (tSim: number): number => {
+      if (tSim < 3600) return 1.0;           // first hour: 1 s
+      if (tSim < 3 * 3600) return 5.0;       // 1–3 h: 5 s
+      if (tSim < 6 * 3600) return 15.0;      // 3–6 h: 15 s
+      return 30.0;                           // 6–8 h: 30 s
+    };
+
+    let apoAlt = -Infinity;
+    let apoPos: { x: number; y: number } | null = null;
+    let periAlt = Infinity;
+    let periPos: { x: number; y: number } | null = null;
+
+    let lastAngle = Math.atan2(ry, rx);
+    let rotAccum = 0; // accumulate angle traversed
+    const stableThreshold = 80_000; // 80 km perigee for stable orbit
+    let stableOrbit = false;
+
+    const escapeRenderRadius = R * 6; // stop rendering once far away if escaping
+    let tSim = 0;
+    for (;;) {
+      const dt = pickDt(tSim);
+      if (tSim >= simSeconds) break;
+      const r2 = rx * rx + ry * ry;
+      const r = Math.sqrt(r2);
+      const alt = r - R;
+      if (r <= R) break; // collision
+
+      // Track apsides
+      if (alt > apoAlt) { apoAlt = alt; apoPos = { x: rx, y: ry }; }
+      if (alt < periAlt) { periAlt = alt; periPos = { x: rx, y: ry }; }
+
+      // Save point
+      out.push({ x: rx, y: ry });
+
+      // Grav accel
+      const invr3 = 1 / (r2 * r);
+      const ax = -mu * rx * invr3;
+      const ay = -mu * ry * invr3;
+      // Semi-implicit Euler
+      vx += ax * dt;
+      vy += ay * dt;
+      rx += vx * dt;
+      ry += vy * dt;
+      tSim += dt;
+
+      // Escape detection (specific orbital energy > 0)
+      const v2 = vx * vx + vy * vy;
+      const energy = 0.5 * v2 - mu / r; // >0 => hyperbolic escape
+      if (energy > 0 && r > escapeRenderRadius) {
+        break; // sufficiently far on escape trajectory
+      }
+
+      // Angle accumulation for orbit detection
+      const ang = Math.atan2(ry, rx);
+      let dAng = ang - lastAngle;
+      // Wrap to [-pi, pi]
+      if (dAng > Math.PI) dAng -= 2 * Math.PI;
+      if (dAng < -Math.PI) dAng += 2 * Math.PI;
+      rotAccum += Math.abs(dAng);
+      lastAngle = ang;
+
+      // If we have completed ~one full revolution and perigee is above threshold, treat as stable orbit
+      if (!stableOrbit && rotAccum >= 2 * Math.PI && periAlt > stableThreshold) {
+        stableOrbit = true;
+        // draw approximately one full revolution and stop early
+        break;
+      }
+    }
+
+    if (apoAlt === -Infinity) { apoAlt = 0; apoPos = null; }
+    if (periAlt === Infinity) { periAlt = 0; periPos = null; }
+
+    return { points: out, apoAlt, apoPos, periAlt, periPos, stableOrbit };
   }
 
   /**

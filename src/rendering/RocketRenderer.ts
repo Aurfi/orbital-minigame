@@ -38,7 +38,7 @@ export class RocketRenderer {
     this.config = {
       // Better looking rocket design - larger and more detailed
       stage1Width: 50,
-      stage1Height: 100,
+      stage1Height: 130,
       stage2Width: 35,
       stage2Height: 70,
       payloadWidth: 25,
@@ -71,13 +71,17 @@ export class RocketRenderer {
    */
   render(renderer: CanvasRenderer, rocketState: RocketState): void {
     const position = rocketState.position;
-    const rotation = rocketState.rotation;
+    const rotation = (rocketState as any).visualRotation ?? rocketState.rotation;
     const isEngineOn = rocketState.isEngineIgnited;
     const throttle = rocketState.throttle;
     
-    // Simple: 0 rotation = rocket points up visually
+    // Compute total height to center the rocket around its position to avoid visual snapping
+    const totalDims = this.getRocketBounds(rocketState);
+    const yOffset = -totalDims.height / 2; // center vertically on position
+
+    // 0 rotation = rocket points up visually; use same sign as physics
     renderer.drawRotated(position, rotation, () => {
-      this.drawRocketBody(renderer, rocketState);
+      this.drawRocketBody(renderer, rocketState, yOffset);
       
       if (isEngineOn && throttle > 0) {
         this.drawExhaust(renderer, throttle, rocketState);
@@ -86,13 +90,29 @@ export class RocketRenderer {
       // Draw separated stages (visual decoupling)
       this.drawSeparatedStages(renderer, rocketState);
     });
+
+    // Compute and expose engine base world position for other systems (smoke/speed effects)
+    const exY = (rocketState as any).exhaustY ?? 0; // local Y of stage bottom
+    // Account for visible nozzle drop below stage bottom (stage-dependent)
+    const currentStage = rocketState.currentStage ?? 0;
+    const nozzleDrop = currentStage === 0 ? 6 : 4; // px below stage bottom in local space
+    (rocketState as any).exhaustNozzleDrop = nozzleDrop;
+    const engineLocalY = exY - nozzleDrop;
+    // Convert local (0, engineLocalY) to world using rotation (y-up): (dx,dy)=(-sin r * y, cos r * y)
+    const enginePos = new Vector2(
+      position.x + (-Math.sin(rotation)) * engineLocalY,
+      position.y + ( Math.cos(rotation)) * engineLocalY
+    );
+    (rocketState as any).engineWorldPos = enginePos;
+    // Local down vector (0,-1) -> world (sin r, -cos r)
+    (rocketState as any).engineDownDir = new Vector2(Math.sin(rotation), -Math.cos(rotation));
   }
 
   /**
    * Draw the main rocket body with stages (only active and above)
    */
-  private drawRocketBody(renderer: CanvasRenderer, rocketState: RocketState): void {
-    let currentY = 0;
+  private drawRocketBody(renderer: CanvasRenderer, rocketState: RocketState, baseYOffset: number = 0): void {
+    let currentY = baseYOffset; // start centered to reduce rotation snapping
     
     // Draw only active and higher stages (lower stages are decoupled)
     const stages = rocketState.stages || [];
@@ -150,7 +170,7 @@ export class RocketRenderer {
     rocketState.exhaustY = activeStageBottomY;
     
     // Draw payload/nose cone
-    const nosePos = new Vector2(-this.config.payloadWidth / 2, currentY);
+      const nosePos = new Vector2(-this.config.payloadWidth / 2, currentY);
     renderer.drawRectangle(nosePos, this.config.payloadWidth, this.config.payloadHeight, this.config.payloadColor, '#000000', 1);
     
     // Draw nose cone tip (triangle)
@@ -182,6 +202,11 @@ export class RocketRenderer {
     
     const exhaustLength = this.config.exhaustLength * exhaustIntensity * exhaustScale;
     const exhaustWidth = this.config.exhaustWidth * exhaustIntensity * exhaustScale;
+    // Expose current exhaust dimensions for external effects anchoring
+    if (rocketState) {
+      rocketState.exhaustLength = exhaustLength;
+      rocketState.exhaustWidth = exhaustWidth;
+    }
     
     // Get exhaust position from active stage bottom (stored in rocketState)
     const exhaustY = rocketState.exhaustY || 0;
@@ -225,6 +250,57 @@ export class RocketRenderer {
   private drawSeparatedStages(renderer: CanvasRenderer, rocketState: RocketState): void {
     // TODO: Add animated separated stages falling away
     // For now, separated stages just disappear (handled by only drawing active+ stages)
+  }
+
+  /**
+   * Render a single detached stage with the same proportions/details as the main rocket
+   */
+  public renderDetachedStage(
+    renderer: CanvasRenderer,
+    stageIndex: number,
+    position: Vector2,
+    rotation: number,
+    alpha: number = 1
+  ): void {
+    const clampAlpha = Math.max(0, Math.min(1, alpha));
+    const withAlpha = (hex: string): string => {
+      // Convert e.g. '#ffffff' to rgba with provided alpha when used as fill
+      // If already rgba string, just append alpha multiplier style
+      if (hex.startsWith('#')) {
+        // parse shorthand or full hex
+        const h = hex.replace('#','');
+        const bigint = parseInt(h.length === 3 ? h.split('').map(c=>c+c).join('') : h, 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r}, ${g}, ${b}, ${clampAlpha})`;
+      }
+      // fall back
+      return hex;
+    };
+
+    renderer.drawRotated(position, rotation, () => {
+      let width = this.config.stage2Width;
+      let height = this.config.stage2Height;
+      let bodyColor = this.config.stage2Color;
+
+      if (stageIndex === 0) {
+        width = this.config.stage1Width;
+        height = this.config.stage1Height;
+        bodyColor = this.config.stage1Color;
+      }
+
+      // Center the body around origin so detached stage aligns with rocket
+      const bodyPos = new Vector2(-width / 2, -height / 2);
+      renderer.drawRectangle(bodyPos, width, height, withAlpha(bodyColor), '#000000', 1);
+
+      // Details
+      if (stageIndex === 0) {
+        this.drawStage1Details(renderer, bodyPos, width, height);
+      } else {
+        this.drawStage2Details(renderer, bodyPos, width, height);
+      }
+    });
   }
 
   /**

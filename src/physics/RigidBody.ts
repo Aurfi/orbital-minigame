@@ -96,8 +96,9 @@ export class RigidBody {
     this.angularVelocity += angularAcceleration * deltaTime;
     this.rotation += this.angularVelocity * deltaTime;
 
-    // Normalize rotation to [0, 2π]
-    this.rotation = ((this.rotation % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    // Wrap rotation to [-π, π] to avoid jumps across 0 → 2π when slightly negative
+    if (this.rotation > Math.PI) this.rotation -= 2 * Math.PI;
+    if (this.rotation < -Math.PI) this.rotation += 2 * Math.PI;
 
     // Store acceleration for next frame (for Verlet if needed)
     this.previousAcceleration = acceleration;

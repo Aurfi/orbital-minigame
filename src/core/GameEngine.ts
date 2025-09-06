@@ -7,6 +7,7 @@ import { CanvasRenderer, Camera } from '../rendering/CanvasRenderer.js';
 import { RocketRenderer } from '../rendering/RocketRenderer.js';
 import { HUDSystem } from '../ui/HUDSystem.js';
 import { RocketConfiguration } from './RocketConfiguration.js';
+import spaceFacts from '../data/space_facts.json';
 import type { GameState } from './types.js';
 
 // Main game engine class
@@ -36,11 +37,17 @@ export class GameEngine {
   
   // Staging animation
   private stagingDebris: Array<{pos: Vector2, vel: Vector2, rotation: number, rotSpeed: number, life: number}> = [];
-  private separatedStages: Array<{pos: Vector2, vel: Vector2, rotation: number, rotSpeed: number, life: number, stageIndex: number}> = [];
+  private separatedStages: Array<{pos: Vector2, vel: Vector2, rotation: number, rotSpeed: number, life: number, stageIndex: number, bornTime: number, age: number, landed?: boolean}> = [];
   private smokeParticles: Array<{pos: Vector2, vel: Vector2, life: number, maxLife: number, size: number}> = [];
   private explosions: Array<{pos: Vector2, vel: Vector2, life: number, maxLife: number, size: number, particles: Array<{pos: Vector2, vel: Vector2, color: string, size: number}>}> = [];
   private stagingAnimationTime = 0;
   private lastStagingTime = 0;
+  
+  // Space facts system
+  private factBubbles: Array<{text: string, pos: Vector2, vel: Vector2, bornAtMs: number, ttlSec: number, opacity: number}> = [];
+  private lastFactSpawnWallMs = 0;
+  private nextFactInterval = 40; // seconds
+  private shownFacts: Set<number> = new Set();
   
   // Atmosphere notifications
   private atmosphereMessages: Array<{text: string, time: number, duration: number}> = [];
@@ -53,6 +60,7 @@ export class GameEngine {
   private gameOverTimer = 0;
   private explosionPhase = false; // Show explosion before game over screen
   private explosionTimer = 0;
+  private gameOverReason = '';
   
   // Game speed controls
   private gameSpeed = 1; // 1x, 2x, 3x speed multiplier
@@ -82,6 +90,20 @@ export class GameEngine {
   // Speed effects
   private velocityStreaks: Array<{pos: Vector2, vel: Vector2, life: number, intensity: number}> = [];
   private atmosphericGlow = 0; // Heating effect intensity
+  private heatLevel = 0; // 0-100 heat accumulation
+  private hasBurnedUp = false;
+  private padBaseAngle: number = Math.PI / 2; // base ground angle for pad/site
+
+  // Attitude control (slow turning)
+  private turnLeft: boolean = false;
+  private turnRight: boolean = false;
+  private angularVelocity: number = 0; // rad/s
+  private readonly maxTurnRate: number = 0.12; // rad/s (~6.9°/s)
+  private readonly angularAccel: number = 0.5; // rad/s^2
+  private visualRotation: number = 0; // smoothed rotation for rendering
+  // Debug controls
+  private debugEnabled: boolean = false;
+  private lastDebugLogTime: number = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -97,6 +119,10 @@ export class GameEngine {
     // Initialize game state first
     this.initializeGameState();
     
+    // Load shown facts from localStorage and schedule first fact
+    this.loadShownFacts();
+    this.nextFactInterval = 30 + Math.random() * 30;
+    
     // Setup camera to proper initial position and zoom
     this.camera.setTarget(this.gameState.rocket.position);
     this.camera.position = this.gameState.rocket.position.clone();
@@ -106,7 +132,7 @@ export class GameEngine {
     this.gameStartTime = Date.now();
     this.missionTimer = 0;
     this.atmosphereMessages.push({
-      text: 'New Game Started - Good Luck!',
+      text: 'Good luck!',
       time: 0,
       duration: 3.0
     });
@@ -124,8 +150,8 @@ export class GameEngine {
     // Create world first
     const world = new WorldParameters();
     
-    // Start rocket on launch pad - right on the surface
-    const launchPosition = new Vector2(0, world.planetRadius + 10); // 10m above surface (barely off ground)
+    // Start rocket on launch pad - bottom at pad
+    const launchPosition = new Vector2(0, world.planetRadius + 0); // on surface
     const launchVelocity = Vector2.zero();
 
     this.rocketBody = new RigidBody(
@@ -152,10 +178,22 @@ export class GameEngine {
         throttle: 0,
         isEngineIgnited: false,
         hasEverLaunched: false,
+        isClamped: true,
+        isOnGround: true,
         currentStage: 0,
         stages: this.rocketConfig.stages,
       },
     };
+
+    // Adjust initial position so the visual bottom sits on the pad despite centered rendering
+    const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+    const halfHeight = dims.height / 2;
+    const nozzleDrop = 6; // stage1 nozzle visual offset
+    const padClearance = 0; // no clearance; sit on surface
+    this.rocketBody.position = launchPosition.add(new Vector2(0, halfHeight + nozzleDrop + padClearance));
+    this.gameState.rocket.position = this.rocketBody.position.clone();
+    // Base angle for pad so buildings and rocket align on restart
+    this.padBaseAngle = Math.atan2(this.rocketBody.position.y, this.rocketBody.position.x);
   }
 
   /**
@@ -210,14 +248,34 @@ export class GameEngine {
           this.igniteEngines();
         }
         break;
-      case 'KeyZ':
-        this.setThrottle(1.0);
+      case 'KeyL': // Toggle debug overlay/logs
+        this.debugEnabled = !this.debugEnabled;
+        console.log(`🔎 Debug ${this.debugEnabled ? 'ENABLED' : 'DISABLED'}`);
         break;
-      case 'KeyX':
-        this.setThrottle(0.0);
+      case 'ArrowUp':
+        event.preventDefault();
+        this.nudgeThrottle(+0.1);
         break;
-      case 'KeyC':
-        this.cutEngines();
+      case 'ArrowDown':
+        event.preventDefault();
+        this.nudgeThrottle(-0.1);
+        break;
+      case 'KeyT':
+        this.setThrottle(1.0); // Full throttle
+        break;
+      case 'KeyG':
+        this.setThrottle(0.0); // Zero throttle
+        break;
+      case 'KeyB':
+        this.cutEngines(); // Cut engines
+        break;
+      case 'ArrowLeft':
+        this.turnLeft = true;
+        if (this.debugEnabled) console.log('⬅️ TurnLeft: ON');
+        break;
+      case 'ArrowRight':
+        this.turnRight = true;
+        if (this.debugEnabled) console.log('➡️ TurnRight: ON');
         break;
       case 'KeyS':
         this.performStaging();
@@ -228,6 +286,10 @@ export class GameEngine {
       case 'KeyR':
         this.restart();
         break;
+      // Auto-release clamps on ignite; no manual key needed
+      // 'L' key no longer used
+      // case 'KeyL':
+      //   break;
     }
   }
 
@@ -236,7 +298,17 @@ export class GameEngine {
    * @param _event Keyboard event
    */
   private handleKeyUp(_event: KeyboardEvent): void {
-    // Handle key releases if needed
+    const event = _event;
+    switch (event.code) {
+      case 'ArrowLeft':
+        this.turnLeft = false;
+        if (this.debugEnabled) console.log('⬅️ TurnLeft: OFF');
+        break;
+      case 'ArrowRight':
+        this.turnRight = false;
+        if (this.debugEnabled) console.log('➡️ TurnRight: OFF');
+        break;
+    }
   }
 
   /**
@@ -269,6 +341,22 @@ export class GameEngine {
         const target = event.target as HTMLButtonElement;
         const speed = parseInt(target.dataset.speed || '1');
         
+        // Altitude gating for higher speeds
+        const altitude = this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude());
+        let minAlt = 0;
+        if (speed >= 3 && speed < 10) minAlt = 500;     // 3x above 500 m
+        if (speed >= 10 && speed < 50) minAlt = 1_000;  // 10x above 1 km
+        if (speed >= 50) minAlt = 30_000;               // 50x above 30 km
+        if (altitude < minAlt) {
+          // Inform player
+          this.atmosphereMessages.push({
+            text: `${speed}x > ${minAlt/1000 >= 1 ? (minAlt/1000)+' km' : minAlt+' m'}`,
+            time: this.gameState.currentTime,
+            duration: 2.5
+          });
+          return;
+        }
+
         // Update game speed
         this.gameSpeed = speed;
         
@@ -298,6 +386,14 @@ export class GameEngine {
     this.gameLoop();
 
     console.log('Game started');
+  }
+
+  /**
+   * Increment/decrement throttle by delta (clamped 0..1)
+   */
+  private nudgeThrottle(delta: number): void {
+    const t = Math.max(0, Math.min(1, this.gameState.rocket.throttle + delta));
+    this.setThrottle(t);
   }
 
   /**
@@ -340,6 +436,7 @@ export class GameEngine {
     this.gameOverTimer = 0;
     this.explosionPhase = false;
     this.explosionTimer = 0;
+    this.gameOverReason = '';
     
     // Clear all effects
     this.stagingDebris = [];
@@ -355,6 +452,8 @@ export class GameEngine {
     // Reset atmosphere tracking
     this.lastAtmosphereLayer = 0;
     this.atmosphericGlow = 0;
+    this.heatLevel = 0;
+    this.hasBurnedUp = false;
     
     // Reinitialize game state
     this.initializeGameState();
@@ -440,8 +539,12 @@ export class GameEngine {
       return;
     }
     
+    // Advance simulated clocks by the simulated delta time (respects speed/warp)
     this.gameState.currentTime += deltaTime;
-    this.missionTimer = (Date.now() - this.gameStartTime) / 1000; // Convert to seconds
+    this.missionTimer += deltaTime;
+
+    // Update attitude before physics so thrust aligns with rotation
+    this.updateAttitude(deltaTime);
 
     // Update physics
     this.physicsIntegrator.update(deltaTime, (dt) => {
@@ -465,8 +568,13 @@ export class GameEngine {
     // Update speed effects
     this.updateSpeedEffects(deltaTime);
 
+    // Apply atmospheric speed cap and heating
+    this.enforceAtmosphericLimits(deltaTime);
+
     // Update rocket state from physics
     this.updateRocketState();
+    // Smooth visual rotation toward physics rotation to avoid snaps
+    this.updateVisualAttitude(deltaTime);
 
     // Update camera - instant follow, no smooth animation
     this.camera.position = this.gameState.rocket.position.clone();
@@ -484,6 +592,138 @@ export class GameEngine {
         this.camera.setZoom(targetZoom);
       }
     }
+    
+    // Facts update/spawn after camera updates so positioning is stable
+    this.updateFactBubbles(deltaTime);
+    this.maybeSpawnFact();
+  }
+
+  /**
+   * Smoothly update rocket attitude based on input (slow turn)
+   */
+  private updateAttitude(deltaTime: number): void {
+    // Left input produces positive rotation; right produces negative.
+    const input = (this.turnLeft ? 1 : 0) - (this.turnRight ? 1 : 0);
+
+    // Integrate angular velocity with acceleration and clamp to max rate
+    this.angularVelocity += input * this.angularAccel * deltaTime;
+    const maxRate = this.maxTurnRate;
+    if (this.angularVelocity > maxRate) this.angularVelocity = maxRate;
+    if (this.angularVelocity < -maxRate) this.angularVelocity = -maxRate;
+
+    // Apply rotation
+    this.rocketBody.rotation += this.angularVelocity * deltaTime;
+
+    // Allow full rotation (wrap handled in RigidBody to [-π, π])
+
+    // Gentle damping when no input
+    if (input === 0) {
+      const damping = 0.98;
+      this.angularVelocity *= damping;
+      if (Math.abs(this.angularVelocity) < 1e-4) this.angularVelocity = 0;
+    }
+
+    // Debug logs (throttled)
+    if (this.debugEnabled) {
+      const now = this.gameState.currentTime;
+      if (now - this.lastDebugLogTime > 0.1) {
+        const deg = (this.rocketBody.rotation * 180 / Math.PI).toFixed(2);
+        const avDeg = (this.angularVelocity * 180 / Math.PI).toFixed(2);
+        console.log(`ATT dt=${deltaTime.toFixed(3)} in=${input} rot=${deg}° av=${avDeg}°/s`);
+        this.lastDebugLogTime = now;
+      }
+    }
+  }
+
+  /**
+   * Smooth visual rotation for rendering only
+   */
+  private updateVisualAttitude(deltaTime: number): void {
+    // Render exactly the physics rotation to avoid any visual snapping.
+    // (We can reintroduce light smoothing later if needed.)
+    this.visualRotation = this.rocketBody.rotation;
+  }
+
+  /**
+   * Clamp rocket speed in atmosphere to a density-based limit and apply heating if exceeded
+   */
+  private enforceAtmosphericLimits(deltaTime: number): void {
+    const position = this.gameState.rocket.position;
+    const velocity = this.gameState.rocket.velocity;
+    const speed = velocity.magnitude();
+    const altitude = this.gameState.world.getAltitude(position.magnitude());
+
+    // Only apply within atmosphere (fake clamp off above ~80 km)
+    if (altitude >= 80_000) {
+      // Cool down gradually in space
+      this.heatLevel = Math.max(0, this.heatLevel - 10 * deltaTime);
+      return;
+    }
+
+    const density = this.gameState.world.getAtmosphericDensity(altitude);
+    const gravity = this.gameState.world.getGravitationalAcceleration(position.magnitude());
+
+    // Compute a reference terminal velocity and set a max allowed speed factor above it
+    const mass = this.rocketBody.mass;
+    const cd = this.rocketConfig.dragCoefficient;
+    const area = this.rocketConfig.crossSectionalArea;
+    const vTerm = AtmosphericPhysics.calculateTerminalVelocity(mass, density, cd, area, gravity);
+    // Allow a buffer above terminal velocity for powered ascent/re-entry glides
+    const vMax = (isFinite(vTerm) ? vTerm : 10_000) * 1.25 + 50; // reference speed, not a hard cap
+
+    // If exceeding the reference limit, apply only a mild atmospheric damping (not a hard clamp)
+    if (speed > vMax && speed > 0) {
+      const overRatio = speed / Math.max(1, vMax);
+      const densityNorm = Math.min(1, density / this.gameState.world.surfaceDensity);
+      // Make damping very light and sub-linear in over-speed so high TWR can push through
+      const over = Math.max(0, overRatio - 1);
+      const decelRate = (1.5 + 8 * densityNorm) * Math.pow(over, 0.7); // m/s^2
+      const vUnit = this.rocketBody.velocity.multiply(1 / speed);
+      const deltaV = decelRate * deltaTime;
+      const newSpeed = Math.max(0, speed - deltaV);
+      this.rocketBody.velocity = vUnit.multiply(newSpeed);
+      this.gameState.rocket.velocity = this.rocketBody.velocity.clone();
+
+      // Heating accumulates when above the safe limit; stronger with density and over-speed
+      this.heatLevel += ((overRatio - 1) * (0.6 + 1.0 * densityNorm) * 70) * deltaTime;
+    } else {
+      // Near the limit (85%-100%) produces slight heating
+      const ratio = speed / Math.max(1, vMax);
+      if (ratio > 0.85) {
+        const densityNorm = Math.min(1, density / this.gameState.world.surfaceDensity);
+        this.heatLevel += ((ratio - 0.85) * 20 * densityNorm) * deltaTime;
+      } else {
+        // Cool down slowly if comfortably within limits
+        this.heatLevel = Math.max(0, this.heatLevel - 15 * deltaTime);
+      }
+    }
+
+    // Visual heating feedback scales with density and speed
+    const heatGlow = Math.min(1, (density / this.gameState.world.surfaceDensity) * (speed / (vMax + 1)));
+    this.atmosphericGlow = Math.max(this.atmosphericGlow, heatGlow);
+
+    // Burn-up if overheated too long
+    if (!this.hasBurnedUp && this.heatLevel >= 100) {
+      this.hasBurnedUp = true;
+      this.atmosphereMessages.push({ text: 'Thermal failure! Vehicle burned up.', time: this.gameState.currentTime, duration: 3.0 });
+      this.gameOverReason = 'Thermal failure (overheating)';
+      this.createExplosion(this.gameState.rocket.position, this.gameState.rocket.velocity);
+      this.destroyRocket(this.gameOverReason);
+    }
+
+    // Random structural failure chance when far over the limit
+    if (!this.isGameOver && !this.gameState.world.isInSpace(altitude) && isFinite(vMax) && speed > vMax * 1.15) {
+      const ratio = speed / vMax;
+      const densityNorm = Math.min(1, density / this.gameState.world.surfaceDensity);
+      // Probability per second increases with (ratio-1.15)^2 and density
+      const pps = Math.min(0.9, (ratio - 1.15) * (ratio - 1.15) * (0.4 + 0.8 * densityNorm));
+      const p = 1 - Math.exp(-pps * deltaTime); // convert to per-frame
+      if (Math.random() < p) {
+        this.gameOverReason = 'Aerodynamic structural failure (overspeed)';
+        this.createExplosion(this.gameState.rocket.position, this.gameState.rocket.velocity);
+        this.destroyRocket(this.gameOverReason);
+      }
+    }
   }
 
   /**
@@ -491,13 +731,51 @@ export class GameEngine {
    * @param deltaTime Physics timestep
    */
   private updatePhysics(deltaTime: number): void {
-    // If rocket has never been launched, keep it fixed to launch pad
-    if (!this.gameState.rocket.hasEverLaunched) {
-      // Fix rocket to launch pad position
-      const launchPosition = new Vector2(0, this.gameState.world.planetRadius + 10);
-      this.rocketBody.position = launchPosition;
-      this.rocketBody.velocity = Vector2.zero();
-      return; // Skip all physics until first ignition
+    // If rocket has never been launched, keep it fixed to launch pad (properly aligned)
+    if (!this.gameState.rocket.hasEverLaunched || this.gameState.rocket.isClamped) {
+      // Rotate with the planet while on the pad using absolute angle so restart stays aligned
+      const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+      const halfHeight = dims.height / 2;
+      const nozzleDrop = 6;
+      const centerRadius = this.gameState.world.planetRadius + halfHeight + nozzleDrop;
+
+      const omega = (this.gameState.world as any).earthRotationRate || 0;
+      const angle = this.padBaseAngle + omega * this.gameState.currentTime;
+      const newX = Math.cos(angle) * centerRadius;
+      const newY = Math.sin(angle) * centerRadius;
+      const newPos = new Vector2(newX, newY);
+      const tan = new Vector2(-Math.sin(angle), Math.cos(angle)).multiply(omega * centerRadius);
+      this.rocketBody.position = newPos;
+      this.rocketBody.velocity = tan;
+      return; // Stay attached to pad until ignition
+    }
+
+    // Ground support: if at ground contact and thrust insufficient, keep resting on ground
+    const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+    const halfHeight = dims.height / 2;
+    const nozzleDrop = 6;
+    const r = this.rocketBody.position.magnitude();
+    const bottomAlt = r - (this.gameState.world.planetRadius + halfHeight + nozzleDrop);
+    if (bottomAlt <= 1.5) {
+      const g = this.gameState.world.getGravitationalAcceleration(r);
+      const weight = this.rocketBody.mass * g;
+      const thrust = this.rocketConfig.getCurrentThrust() * this.gameState.rocket.throttle;
+      const twr = weight > 0 ? thrust / weight : 0;
+      if (twr <= 1.01) {
+        // Stay grounded: snap to ground and move with Earth rotation
+        const desiredCenter = this.gameState.world.planetRadius + halfHeight + nozzleDrop + 1;
+        const u = this.safeNormalize(this.rocketBody.position);
+        const omega = (this.gameState.world as any).earthRotationRate || 0;
+        const angle = Math.atan2(u.y, u.x);
+        const newPos = new Vector2(Math.cos(angle) * desiredCenter, Math.sin(angle) * desiredCenter);
+        const groundVel = new Vector2(-Math.sin(angle), Math.cos(angle)).multiply(omega * desiredCenter);
+        this.rocketBody.position = newPos;
+        this.rocketBody.velocity = groundVel;
+        this.gameState.rocket.isOnGround = true;
+        return; // skip dynamic physics while grounded
+      } else {
+        this.gameState.rocket.isOnGround = false; // liftoff
+      }
     }
 
     // Clear forces
@@ -539,8 +817,8 @@ export class GameEngine {
     // Integrate physics
     this.rocketBody.integrate(deltaTime);
 
-    // Check for ground collision - only after engines have been ignited
-    if (this.gameState.rocket.isEngineIgnited && this.gameState.world.isBelowSurface(this.rocketBody.position.magnitude())) {
+    // Check for ground collision regardless of engine state
+    if (this.gameState.world.isBelowSurface(this.rocketBody.position.magnitude())) {
       this.handleGroundCollision();
     }
   }
@@ -564,8 +842,8 @@ export class GameEngine {
    */
   private calculateThrustForce(): Vector2 {
     const thrust = this.rocketConfig.getCurrentThrust() * this.gameState.rocket.throttle;
-    // Simple: 0 rotation = straight up (0, 1)
-    const direction = new Vector2(0, 1); // Always point up for now
+    // 0 rotation = up; positive rotation = tilt left visually. Use -sin so thrust points left for positive rotation.
+    const direction = new Vector2(-Math.sin(this.rocketBody.rotation), Math.cos(this.rocketBody.rotation));
     // console.log(`Raw thrust: ${this.rocketConfig.getCurrentThrust()}N, throttle: ${this.gameState.rocket.throttle}, direction: (${direction.x}, ${direction.y})`);
 
     return direction.multiply(thrust);
@@ -594,8 +872,11 @@ export class GameEngine {
     this.gameState.rocket.position = this.rocketBody.position.clone();
     this.gameState.rocket.velocity = this.rocketBody.velocity.clone();
     this.gameState.rocket.rotation = this.rocketBody.rotation;
+    this.gameState.rocket.visualRotation = this.visualRotation;
     this.gameState.rocket.mass = this.rocketBody.mass;
     this.gameState.rocket.stages = this.rocketConfig.stages;
+    this.gameState.rocket.dragCoefficient = this.rocketConfig.dragCoefficient;
+    this.gameState.rocket.crossSectionalArea = this.rocketConfig.crossSectionalArea;
     this.gameState.rocket.fuel = this.rocketConfig.stages.reduce(
       (sum, stage) => sum + stage.fuelRemaining,
       0
@@ -608,8 +889,9 @@ export class GameEngine {
   private handleGroundCollision(): void {
     console.log('Ground collision detected!');
     
-    // Check if impact speed is above 15 m/s - if so, explode
-    const impactSpeed = this.rocketBody.velocity.magnitude();
+    // Check relative impact speed (ignore ground rotation)
+    const groundVel = this.getGroundVelocityAt(this.rocketBody.position);
+    const impactSpeed = this.rocketBody.velocity.subtract(groundVel).magnitude();
     if (impactSpeed > 15.0) {
       console.log(`💥 HIGH-SPEED GROUND IMPACT! Speed: ${impactSpeed.toFixed(1)} m/s - EXPLOSION!`);
       
@@ -617,7 +899,8 @@ export class GameEngine {
       this.createExplosion(this.gameState.rocket.position, this.gameState.rocket.velocity);
       
       // Destroy rocket completely - game over
-      this.destroyRocket();
+      this.gameOverReason = 'High-speed ground impact';
+      this.destroyRocket(this.gameOverReason);
       return;
     }
     
@@ -625,14 +908,15 @@ export class GameEngine {
     console.log(`Soft landing! Impact speed: ${impactSpeed.toFixed(1)} m/s`);
     this.rocketBody.velocity = Vector2.zero();
     
-    // Only adjust position if rocket is actually underground
+    // Place rocket bottom at ground contact using visual half-height
     const currentDistance = this.rocketBody.position.magnitude();
     const surfaceDistance = this.gameState.world.planetRadius;
-    
-    if (currentDistance < surfaceDistance) {
-      // Only move to surface if actually underground
+    const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+    const halfHeight = dims.height / 2;
+    const desiredCenter = surfaceDistance + halfHeight + 1;
+    if (currentDistance < desiredCenter) {
       const normalizedPos = this.safeNormalize(this.rocketBody.position);
-      this.rocketBody.position = normalizedPos.multiply(surfaceDistance + 1); // Just above surface
+      this.rocketBody.position = normalizedPos.multiply(desiredCenter);
     }
     // Otherwise, leave rocket at current position (it might just be very close to surface)
   }
@@ -648,6 +932,7 @@ export class GameEngine {
     this.drawPlanet();
 
     // Draw background elements (buildings, clouds, etc.)
+    // Note: staging elements are now drawn after the rocket for better layering
     this.drawBackgroundElements();
 
     // Draw rocket (only if not exploding or game over)
@@ -655,10 +940,16 @@ export class GameEngine {
       this.rocketRenderer.render(this.renderer, this.gameState.rocket);
     }
 
+    // Draw staging elements after rocket so they share the same visual layer initially
+    this.drawStagingElements();
+
     this.renderer.endFrame();
 
     // Draw HUD
     this.hudSystem.render(this.renderer, this.gameState, this.missionTimer);
+    if (this.debugEnabled) this.renderDebugOverlay();
+    // Draw space fact bubbles as UI overlay (HUD-like)
+    this.drawFactBubbles();
     
     // Draw atmosphere messages on top of HUD
     this.drawAtmosphereMessages();
@@ -667,6 +958,28 @@ export class GameEngine {
     if (this.isGameOver) {
       this.renderGameOverScreen();
     }
+  }
+
+  private renderDebugOverlay(): void {
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    const panelX = this.canvas.width - 220;
+    const panelY = 10;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(panelX, panelY, 210, 90);
+    ctx.strokeStyle = '#00ff00';
+    ctx.strokeRect(panelX, panelY, 210, 90);
+    ctx.fillStyle = '#00ff00';
+    ctx.font = '12px monospace';
+    const rotDeg = (this.rocketBody.rotation * 180 / Math.PI).toFixed(2);
+    const avDeg = (this.angularVelocity * 180 / Math.PI).toFixed(2);
+    ctx.fillText('Debug: ON (L to toggle)', panelX + 8, panelY + 18);
+    ctx.fillText(`Rot: ${rotDeg}°  AV: ${avDeg}°/s`, panelX + 8, panelY + 36);
+    ctx.fillText(`Left:${this.turnLeft?'1':'0'} Right:${this.turnRight?'1':'0'}`, panelX + 8, panelY + 54);
+    ctx.fillText(`Throttle: ${(this.gameState.rocket.throttle*100).toFixed(0)}%`, panelX + 8, panelY + 72);
+    ctx.restore();
   }
 
   /**
@@ -691,33 +1004,32 @@ export class GameEngine {
    * Draw sky gradient that changes with altitude
    */
   private drawSkyGradient(altitude: number): void {
-    // Calculate sky color based on altitude
-    let skyColor: string;
-    
-    if (altitude < 5_000) {
-      // Low altitude - light blue sky
-      skyColor = '#87CEEB'; // Sky blue
-    } else if (altitude < 20_000) {
-      // Medium altitude - transitioning to darker blue
-      const factor = (altitude - 5_000) / 15_000;
-      const r = Math.floor(135 * (1 - factor) + 70 * factor);
-      const g = Math.floor(206 * (1 - factor) + 130 * factor);
-      const b = Math.floor(235 * (1 - factor) + 180 * factor);
-      skyColor = `rgb(${r}, ${g}, ${b})`;
-    } else if (altitude < 50_000) {
-      // High altitude - dark blue
-      const factor = (altitude - 20_000) / 30_000;
-      const r = Math.floor(70 * (1 - factor) + 25 * factor);
-      const g = Math.floor(130 * (1 - factor) + 25 * factor);
-      const b = Math.floor(180 * (1 - factor) + 50 * factor);
-      skyColor = `rgb(${r}, ${g}, ${b})`;
-    } else {
-      // Space - almost black with slight blue tint
-      skyColor = '#0F0F23'; // Very dark blue
-    }
+    // Radial gradient centered at planet, simulating atmospheric scattering
+    const planetCenter = Vector2.zero();
+    const planetRadius = this.gameState.world.planetRadius;
+    const atmoThickness = 100_000; // nominal atmosphere
+    const glowBleed = 250_000;     // extend faint glow beyond atmosphere
 
-    // Fill entire background with sky color
-    this.renderer.clear(skyColor);
+    // Smooth fade: keep a subtle glow even well outside the atmosphere
+    const smoothstep = (a: number, b: number, x: number) => {
+      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+
+    // t = 1 near ground, smoothly down to 0 by glowBleed altitude
+    const t = 1 - smoothstep(0, glowBleed, altitude);
+    const alpha = 0.05 + 0.75 * t; // 0.05 far space .. 0.8 near ground
+    const inner = `rgba(135, 206, 235, ${alpha.toFixed(3)})`; // light blue
+    const outer = '#0F0F23'; // deep space blue
+
+    // Paint the radial gradient in screen space (extend to glowBleed)
+    this.renderer.fillRadialGradientWorld(
+      planetCenter,
+      planetRadius,
+      planetRadius + glowBleed,
+      inner,
+      outer
+    );
   }
 
   /**
@@ -748,37 +1060,192 @@ export class GameEngine {
     this.updateBackgroundElements();
     
     // Draw moon and stars at high altitude
-    if (altitude > 10000) {
+    if (altitude > 10_000) {
       this.drawMoon();
     }
-    if (altitude > 50000) {
+    if (altitude > 50_000) {
       this.drawStars();
     }
     
-    // Draw buildings at low altitude
-    if (altitude < 20000) {
-      this.drawBuildings();
-    }
+    // (Buildings removed)
     
     // Draw clouds at medium altitude
-    if (altitude < 15000) {
+    if (altitude < 15_000) {
       this.drawClouds();
     }
     
     // Draw flying objects
-    if (altitude < 25000) {
+    if (altitude < 25_000) {
       this.drawBirds();
       this.drawPlanes();
     }
     
-    // Draw staging debris
-    this.drawStagingDebris();
+    // Staging elements now draw after rocket for better scale/layering
     
     // Draw explosions
     this.drawExplosions();
     
     // Draw speed effects
     this.drawSpeedEffects();
+
+    // (Local launch overlay removed)
+  }
+
+  /**
+   * Ground tangential velocity at a world position due to planet rotation
+   */
+  private getGroundVelocityAt(pos: Vector2): Vector2 {
+    const omega = (this.gameState.world as any).earthRotationRate || 0;
+    const r = pos.magnitude();
+    if (r < 1e-6 || omega === 0) return Vector2.zero();
+    const u = this.safeNormalize(pos);
+    const t = new Vector2(-u.y, u.x);
+    return t.multiply(omega * r);
+  }
+
+  // === SPACE FACTS METHODS ===
+  private loadShownFacts(): void {
+    try {
+      const raw = localStorage.getItem('shownSpaceFacts');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) this.shownFacts = new Set(arr);
+      }
+    } catch {}
+  }
+
+  private saveShownFacts(): void {
+    try {
+      localStorage.setItem('shownSpaceFacts', JSON.stringify(Array.from(this.shownFacts)));
+    } catch {}
+  }
+
+  private updateFactBubbles(_deltaTime: number): void {
+    const now = Date.now();
+    for (let i = this.factBubbles.length - 1; i >= 0; i--) {
+      const b = this.factBubbles[i];
+      const age = (now - b.bornAtMs) / 1000;
+      const t = age / b.ttlSec;
+      // Ease: fade in first 0.2, fade out last 0.2
+      b.opacity = Math.max(0, Math.min(1, t < 0.2 ? t / 0.2 : t > 0.8 ? (1 - t) / 0.2 : 1));
+      if (age >= b.ttlSec) this.factBubbles.splice(i, 1);
+    }
+  }
+
+  private drawFactBubbles(): void {
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (const b of this.factBubbles) {
+      // Slide-in/out offset based on life
+      const inDur = 0.3;
+      const outDur = 0.3;
+      const t = b.life;
+      const tIn = Math.min(1, t / inDur);
+      const tOut = Math.max(0, (b.maxLife - t) / outDur);
+      const slide = Math.min(tIn, tOut); // 0..1
+      const ease = (p: number) => p * p * (3 - 2 * p); // smoothstep
+      const slideOffset = (1 - ease(slide)) * 24; // px from right
+
+      const panelW = 320;
+      const panelH = 120;
+      const x = b.pos.x + slideOffset - panelW / 2;
+      const y = b.pos.y - panelH / 2;
+
+      // Panel background with rounded corners
+      const r = 10;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + panelW - r, y);
+      ctx.quadraticCurveTo(x + panelW, y, x + panelW, y + r);
+      ctx.lineTo(x + panelW, y + panelH - r);
+      ctx.quadraticCurveTo(x + panelW, y + panelH, x + panelW - r, y + panelH);
+      ctx.lineTo(x + r, y + panelH);
+      ctx.quadraticCurveTo(x, y + panelH, x, y + panelH - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(20, 40, 80, ${0.85 * b.opacity})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(120, 170, 240, ${b.opacity})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Header
+      ctx.fillStyle = `rgba(180, 220, 255, ${b.opacity})`;
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('SPACE FACT', x + 12, y + 18);
+
+      // Text
+      ctx.fillStyle = `rgba(255,255,255, ${b.opacity})`;
+      ctx.font = '12px monospace';
+      const lines = this.wrapText(ctx, b.text, panelW - 24);
+      let ty = y + 40;
+      for (const line of lines) {
+        ctx.fillText(line, x + 12, ty);
+        ty += 16;
+      }
+    }
+    ctx.restore();
+  }
+
+  private wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  private maybeSpawnFact(): void {
+    const t = this.gameState.currentTime;
+    const altitude = this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude());
+    // Show facts only once above 5 km; no upper limit
+    const inRange = altitude >= 5_000; // from 5 km upward
+    if (!inRange) return;
+
+    const now = Date.now();
+    if ((now - this.lastFactSpawnWallMs) / 1000 >= this.nextFactInterval) {
+      // Pick a fact index not yet shown
+      const factsArr: string[] = (spaceFacts as unknown as string[]);
+      const available: number[] = [];
+      for (let i = 0; i < factsArr.length; i++) {
+        if (!this.shownFacts.has(i)) available.push(i);
+      }
+      if (available.length === 0) {
+        // All facts shown; stop scheduling
+        this.nextFactInterval = Number.POSITIVE_INFINITY;
+        return;
+      }
+      const idx = available[Math.floor(Math.random() * available.length)];
+      const fact = factsArr[idx];
+      this.shownFacts.add(idx);
+      this.saveShownFacts();
+
+      // Spawn bubble pinned to the right side, fixed height so it never covers apo/peri labels
+      const screenW = this.canvas.width;
+      const panelWidth = 320;
+      const margin = 20;
+      const x = screenW - panelWidth / 2 - margin; // right inset
+      const y = 60; // fixed top height
+      const pos = new Vector2(x, y);
+      const vel = new Vector2(0, 0); // no drift in screen space
+      this.factBubbles.push({ text: fact, pos, vel, bornAtMs: now, ttlSec: 12 + Math.random() * 4, opacity: 0 });
+
+      this.lastFactSpawnWallMs = now;
+      this.nextFactInterval = 20 + Math.random() * 25; // 20–45s
+    }
   }
 
   /**
@@ -886,39 +1353,7 @@ export class GameEngine {
   /**
    * Draw realistic Kennedy Space Center buildings
    */
-  private drawBuildings(): void {
-    const groundLevel = this.gameState.world.planetRadius + 10;
-    
-    // Vehicle Assembly Building (VAB) - realistic proportions
-    this.renderer.drawRectangle(
-      new Vector2(-400, groundLevel),
-      160, 220, '#f0f0f0', '#333333', 2
-    );
-    // VAB blue stripes
-    this.renderer.drawRectangle(new Vector2(-360, groundLevel + 20), 8, 180, '#1f4788');
-    this.renderer.drawRectangle(new Vector2(-340, groundLevel + 20), 8, 180, '#1f4788');
-    this.renderer.drawRectangle(new Vector2(-380, groundLevel + 20), 8, 180, '#1f4788');
-    
-    // Launch Control Center
-    this.renderer.drawRectangle(
-      new Vector2(-200, groundLevel),
-      80, 60, '#e0e0e0', '#333333', 2
-    );
-    
-    // Service Tower
-    this.renderer.drawRectangle(
-      new Vector2(100, groundLevel),
-      15, 150, '#c0c0c0', '#333333', 2
-    );
-    
-    // Multiple hangars
-    this.renderer.drawRectangle(new Vector2(-600, groundLevel), 100, 40, '#d5d5d5', '#333333', 1);
-    this.renderer.drawRectangle(new Vector2(300, groundLevel), 80, 35, '#d5d5d5', '#333333', 1);
-    this.renderer.drawRectangle(new Vector2(450, groundLevel), 60, 30, '#d5d5d5', '#333333', 1);
-    
-    // Crawler transporter path
-    this.renderer.drawRectangle(new Vector2(-300, groundLevel - 2), 400, 8, '#555555');
-  }
+  // (Buildings removed)
 
   private drawClouds(): void {
     for (const cloud of this.clouds) {
@@ -1027,7 +1462,12 @@ export class GameEngine {
       this.gameState.rocket.hasEverLaunched = true; // Mark as launched
       // Auto-set some throttle for easier testing
       this.gameState.rocket.throttle = 0.5; // 50% throttle
-      console.log('✅ Engines ignited! Auto-throttle set to 50%');
+      // Auto-release pad clamps on initial ignition
+      if (this.gameState.rocket.isClamped) {
+        this.gameState.rocket.isClamped = false;
+        console.log('🧰 Pad clamps auto-released. Liftoff!');
+      }
+      console.log('✅ Engine start! Throttle 50%');
       return true;
     }
     console.log('❌ No thrust available - ignition failed');
@@ -1056,7 +1496,8 @@ export class GameEngine {
       this.createExplosion(this.gameState.rocket.position, this.gameState.rocket.velocity);
       
       // Destroy rocket completely - game over
-      this.destroyRocket();
+      this.gameOverReason = 'Staging while engines firing';
+      this.destroyRocket(this.gameOverReason);
       
       return false;
     }
@@ -1094,36 +1535,33 @@ export class GameEngine {
     // Create the separated stage - keeps almost the same velocity as the rocket
     const currentStageIndex = this.gameState.rocket.currentStage - 1; // Previous stage that was separated
     
-    // Create more realistic separation - small push away from rocket
-    const separationSpeed = 2.0 + Math.random() * 1.0; // 2-3 m/s separation
-    const rocketDirection = this.safeNormalize(velocity);
-    const separationDirection = new Vector2(-rocketDirection.x, -rocketDirection.y); // Opposite to rocket direction
+    // Separation: drift gently down along rocket orientation
+    const rocketDown = new Vector2(Math.sin(this.gameState.rocket.rotation), -Math.cos(this.gameState.rocket.rotation));
+    const separationVel = velocity.add(rocketDown.multiply(5));
     
-    const separationVel = velocity.add(separationDirection.multiply(separationSpeed));
-    
-    // Calculate proper stage bottom position based on rocket geometry
-    let stageBottomOffset = 0;
-    if (currentStageIndex === 0) {
-      // First stage - position at bottom of rocket
-      stageBottomOffset = 25; // Bottom of first stage
-    } else if (currentStageIndex === 1) {
-      // Second stage - position where first stage was
-      stageBottomOffset = 15; // Smaller second stage
+    // Spawn 20–25px below the current stage bottom (engine exit)
+    const exhaustLocalY = this.gameState.rocket.exhaustY;
+    let bottomDistance: number;
+    if (typeof exhaustLocalY === 'number') {
+      bottomDistance = Math.max(10, -exhaustLocalY);
+    } else {
+      const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+      bottomDistance = Math.max(10, dims.height / 2);
     }
-    
-    // Position separated stage at bottom of rocket with proper offset
-    const separatedStagePos = new Vector2(
-      position.x + Math.sin(this.gameState.rocket.rotation) * stageBottomOffset,
-      position.y - Math.cos(this.gameState.rocket.rotation) * stageBottomOffset
-    );
+    const baseBottom = position.add(rocketDown.multiply(bottomDistance));
+    const offset = 20 + Math.random() * 5;
+    const separatedStagePos = baseBottom.add(rocketDown.multiply(offset));
     
     this.separatedStages.push({
       pos: separatedStagePos,
       vel: separationVel,
-      rotation: this.gameState.rocket.rotation + (Math.random() - 0.5) * 0.2, // Slight initial rotation offset
-      rotSpeed: (Math.random() - 0.5) * 1.5, // More visible rotation
+      rotation: this.gameState.rocket.rotation, // keep same orientation
+      rotSpeed: 0, // no rotation over time
       life: 30.0, // Visible for 30 seconds - longer visibility
-      stageIndex: Math.max(0, currentStageIndex)
+      stageIndex: Math.max(0, currentStageIndex),
+      bornTime: this.gameState.currentTime,
+      age: 0,
+      landed: false
     });
     
     // Create some small debris pieces
@@ -1160,6 +1598,13 @@ export class GameEngine {
     // Update separated stages
     for (let i = this.separatedStages.length - 1; i >= 0; i--) {
       const stage = this.separatedStages[i];
+      if (stage.landed) {
+        // Keep landed stage in place; slowly fade life if desired
+        stage.life -= deltaTime * 0.0; // keep indefinitely for now
+        if (stage.life <= 0) this.separatedStages.splice(i, 1);
+        continue;
+      }
+      stage.age += deltaTime;
       
       // Apply physics to separated stages (gravity, etc.)
       let stagePosition: Vector2;
@@ -1178,101 +1623,79 @@ export class GameEngine {
       gravityDirection = this.safeNormalize(stagePosition).multiply(-1);
       
       const gravityAccel = gravityDirection.multiply(gravityMagnitude);
+
+      // No extra retro-thruster push; keep motion simple
       
       // Ensure velocity is a Vector2
       if (!(stage.vel instanceof Vector2)) {
         stage.vel = new Vector2(stage.vel.x, stage.vel.y);
       }
       stage.vel = stage.vel.add(gravityAccel.multiply(deltaTime));
+
+      // Gentle drift down along gravity only
       
       // Ensure position is a Vector2 and update
       if (!(stage.pos instanceof Vector2)) {
         stage.pos = new Vector2(stage.pos.x, stage.pos.y);
       }
-      stage.pos = stage.pos.add(stage.vel.multiply(deltaTime));
-      stage.rotation += stage.rotSpeed * deltaTime;
+      // Ground collision for separated stages
+      const stageAltitude = this.gameState.world.getAltitude(stage.pos.magnitude());
+      if (stageAltitude <= 0) {
+        const impactSpeed = stage.vel.magnitude();
+        if (impactSpeed > 15) {
+          // Explode stage on hard impact
+          this.createExplosion(stage.pos, stage.vel);
+          this.separatedStages.splice(i, 1);
+          continue;
+        } else {
+          // Soft land: stop motion and sit on surface
+          const surfaceNorm = this.safeNormalize(stage.pos);
+          stage.pos = surfaceNorm.multiply(this.gameState.world.planetRadius + 1);
+          stage.vel = new Vector2(0, 0);
+          stage.landed = true;
+        }
+      }
+      if (!stage.landed) {
+        stage.pos = stage.pos.add(stage.vel.multiply(deltaTime));
+      }
+      // Rotation locked to remove wobble
       stage.life -= deltaTime;
       
+      // Cull when far off the bottom of the screen (unless landed)
+      const screenPos = this.renderer.worldToScreen(stage.pos);
+      const viewSize = this.renderer.getSize();
+      if (!stage.landed && screenPos.y > viewSize.y + 120) {
+        stage.life = 0;
+      }
+
       if (stage.life <= 0) {
         this.separatedStages.splice(i, 1);
       }
     }
   }
   
-  private drawStagingDebris(): void {
+  private drawStagingElements(): void {
     // Draw separated stages
     for (const stage of this.separatedStages) {
       const alpha = Math.max(0, Math.min(1, stage.life / 30.0)); // Fade out over 30 seconds
-      
+
+      // Simple visual for separated stage (no special foreground animation)
       this.renderer.drawRotated(stage.pos, stage.rotation, () => {
-        // Draw different stage types based on stage index
         if (stage.stageIndex === 0) {
-          // First stage - large booster
           this.renderer.drawRectangle(
             new Vector2(-8, -25),
             16, 50,
-            `rgba(240, 240, 240, ${alpha})`, // Light gray body
-            `rgba(44, 90, 160, ${alpha})`, // NASA blue outline
+            `rgba(240, 240, 240, ${alpha})`,
+            `rgba(44, 90, 160, ${alpha})`,
             2
           );
-          
-          // Engine nozzles for first stage
-          this.renderer.drawRectangle(
-            new Vector2(-6, 20),
-            4, 8,
-            `rgba(100, 100, 100, ${alpha})`,
-            `rgba(60, 60, 60, ${alpha})`,
-            1
-          );
-          this.renderer.drawRectangle(
-            new Vector2(2, 20),
-            4, 8,
-            `rgba(100, 100, 100, ${alpha})`,
-            `rgba(60, 60, 60, ${alpha})`,
-            1
-          );
-          
-          // First stage details (fuel lines, etc.)
-          this.renderer.drawRectangle(
-            new Vector2(-7, -10),
-            2, 20,
-            `rgba(44, 90, 160, ${alpha})`, // Blue stripe
-            undefined,
-            0
-          );
-          this.renderer.drawRectangle(
-            new Vector2(5, -10),
-            2, 20,
-            `rgba(44, 90, 160, ${alpha})`, // Blue stripe
-            undefined,
-            0
-          );
         } else {
-          // Second stage - smaller
           this.renderer.drawRectangle(
             new Vector2(-6, -18),
             12, 36,
-            `rgba(255, 255, 255, ${alpha})`, // White body
-            `rgba(192, 57, 43, ${alpha})`, // Red outline
+            `rgba(255, 255, 255, ${alpha})`,
+            `rgba(192, 57, 43, ${alpha})`,
             2
-          );
-          
-          // Single engine nozzle for second stage
-          this.renderer.drawRectangle(
-            new Vector2(-3, 15),
-            6, 6,
-            `rgba(100, 100, 100, ${alpha})`,
-            `rgba(60, 60, 60, ${alpha})`,
-            1
-          );
-          
-          // Second stage red band
-          this.renderer.drawRectangle(
-            new Vector2(-6, -5),
-            12, 4,
-            `rgba(192, 57, 43, ${alpha})`, // Red band
-            undefined,
-            0
           );
         }
       });
@@ -1300,6 +1723,18 @@ export class GameEngine {
     const speed = velocity.magnitude();
     const position = this.gameState.rocket.position;
     const altitude = this.gameState.world.getAltitude(position.magnitude());
+    const rotation = this.gameState.rocket.rotation;
+    // Compute down direction along the rocket body (rotate (0,-1) by +rotation)
+    const rocketDown = new Vector2(Math.sin(rotation), -Math.cos(rotation));
+    const exhaustLocalY = this.gameState.rocket.exhaustY;
+    let bottomDistance: number;
+    if (typeof exhaustLocalY === 'number') {
+      bottomDistance = Math.max(10, -exhaustLocalY);
+    } else {
+      const dims = this.rocketRenderer.getRocketBounds(this.gameState.rocket as any);
+      bottomDistance = Math.max(10, dims.height / 2);
+    }
+    const engineBase = position.add(rocketDown.multiply(bottomDistance));
     
     // Get atmospheric density (0-1, where 1 is sea level)
     const atmosphericDensity = this.gameState.world.getAtmosphericDensity(altitude);
@@ -1316,6 +1751,9 @@ export class GameEngine {
     this.atmosphericGlow = effectIntensity;
     
     
+    const exhaustLen = (this.gameState.rocket as any).exhaustLength ?? 32;
+    const halfPlume = Math.max(16, exhaustLen * 0.7); // slightly deeper into plume
+
     // Create velocity streaks if moving fast enough in atmosphere
     if (effectIntensity > 0.01) { // Much lower threshold
       const streakCount = Math.floor(effectIntensity * 8); // 0-8 streaks
@@ -1325,14 +1763,14 @@ export class GameEngine {
         const velocityAngle = Math.atan2(velocity.x, velocity.y);
         const rocketRotation = this.gameState.rocket.rotation;
         
-        // Distance from rocket center to air friction point
-        const frictionDistance = 30 + Math.random() * 20;
+        // Distance from engine along plume for streak start
+        const frictionDistance = 18 + Math.random() * 18;
         
         // Position streaks opposite to velocity direction (where air hits the rocket)
         const velocityOppositeAngle = velocityAngle + Math.PI; // 180 degrees opposite
         
-        // Add some randomness around the velocity-opposite direction
-        const spreadAngle = (Math.random() - 0.5) * 0.8; // ±23 degrees spread
+        // Minimal lateral spread to keep aligned with nozzle
+        const spreadAngle = (Math.random() - 0.5) * 0.2; // ±6 degrees spread
         const effectiveAngle = velocityOppositeAngle + spreadAngle;
         
         // Calculate position where air friction creates the visual effect
@@ -1340,8 +1778,9 @@ export class GameEngine {
           Math.sin(effectiveAngle) * frictionDistance,
           -Math.cos(effectiveAngle) * frictionDistance
         );
-        
-        const streakPos = position.add(frictionOffset);
+        // Start streaks slightly within the plume along rocketDown direction
+        const startBase = engineBase.add(rocketDown.multiply(Math.min(frictionDistance + 10, halfPlume + 12)));
+        const streakPos = startBase.add(frictionOffset.multiply(0.08));
         
         // Streak velocity opposite to rocket movement with some randomness
         const streakVel = velocity.multiply(-0.3 + Math.random() * 0.2);
@@ -1389,28 +1828,29 @@ export class GameEngine {
       // Only create smoke if there's intensity
       if (smokeIntensity > 0.01) {
         // Create smoke particles from engine exhaust
-        const smokeFrequency = Math.max(1, Math.floor(10 * this.gameState.rocket.throttle * smokeIntensity)); // More smoke at higher throttle, reduced by intensity
+        const smokeFrequency = Math.max(1, Math.floor(14 * this.gameState.rocket.throttle * smokeIntensity)); // denser trail
       
       for (let i = 0; i < smokeFrequency; i++) {
-        // Position smoke at rocket bottom (engine exit)
-        const smokeOffset = 25 + Math.random() * 10; // Bottom of rocket + some variance
-        const smokePos = new Vector2(
-          position.x + Math.sin(this.gameState.rocket.rotation) * smokeOffset + (Math.random() - 0.5) * 10,
-          position.y - Math.cos(this.gameState.rocket.rotation) * smokeOffset + (Math.random() - 0.5) * 10
-        );
+        // Position smoke within the exhaust plume (about halfway down)
+        const distAlong = halfPlume + 6 + (Math.random() - 0.5) * 8;
+        const down = rocketDown.multiply(distAlong);
+        const jitter = new Vector2((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
+        const smokePos = new Vector2(engineBase.x + down.x + jitter.x, engineBase.y + down.y + jitter.y);
         
-        // Smoke starts with exhaust velocity then gets affected by atmosphere
+        // Smoke starts along the nozzle direction, then gets affected by atmosphere
+        const ejectSpeed = 90 + 140 * this.gameState.rocket.throttle; // initial exhaust speed component
+        const dir = rocketDown;
         const smokeVel = new Vector2(
-          velocity.x * 0.3 + (Math.random() - 0.5) * 50, // Some of rocket velocity + random spread
-          velocity.y * 0.3 + (Math.random() - 0.5) * 50 - 20 // Upward bias from hot exhaust
+          dir.x * ejectSpeed + velocity.x * 0.15 + (Math.random() - 0.5) * 12,
+          dir.y * ejectSpeed + velocity.y * 0.15 + (Math.random() - 0.5) * 12
         );
         
         this.smokeParticles.push({
           pos: smokePos,
           vel: smokeVel,
-          life: (2 + Math.random() * 3) * smokeIntensity, // Shorter life at high altitude
-          maxLife: 3 * smokeIntensity,
-          size: (5 + Math.random() * 10) * smokeIntensity // Smaller size at high altitude
+          life: (3.0 + Math.random() * 4.0) * smokeIntensity, // longer, scales with density
+          maxLife: 4.5 * smokeIntensity,
+          size: (6 + Math.random() * 12) * smokeIntensity // slightly bigger
         });
       }
       
@@ -1520,7 +1960,7 @@ export class GameEngine {
     } else if (altitude < 700000) {
       currentLayer = 3; // Thermosphere (80-700km)
     } else {
-      currentLayer = 4; // Space (>700km)
+      currentLayer = 4; // Exosphere / Space (>700km)
     }
     
     // Check if we've entered a new layer
@@ -1540,7 +1980,7 @@ export class GameEngine {
           message = 'You reached the Thermosphere!';
           break;
         case 4:
-          message = 'You reached Space! (<0.5% atmosphere)';
+          message = 'You reached the Exosphere! (Near-space)';
           break;
       }
       
@@ -1670,31 +2110,48 @@ export class GameEngine {
     ctx.setTransform(1, 0, 0, 1, 0, 0); // Screen coordinates
 
     const centerX = this.canvas.width / 2;
-    let offsetY = 100;
+    let offsetY = 90;
     
     for (const msg of this.atmosphereMessages) {
       const age = this.gameState.currentTime - msg.time;
       const fadeIn = Math.min(1, age * 3); // Fade in over 0.33s
       const fadeOut = Math.min(1, Math.max(0, (msg.duration - age) * 2)); // Fade out over 0.5s
       const alpha = fadeIn * fadeOut;
-      
+
+      // Font first, then measure
+      ctx.font = '14px monospace';
+      ctx.textAlign = 'left';
+      const maxTextWidth = Math.min(this.canvas.width * 0.6, 380);
+      const lines = this.wrapText(ctx, msg.text, maxTextWidth);
+      const lineHeight = 18;
+      let textW = 0;
+      for (const line of lines) {
+        textW = Math.max(textW, ctx.measureText(line).width);
+      }
+      const padX = 12, padY = 8;
+      const panelW = textW + padX * 2;
+      const panelH = lines.length * lineHeight + padY * 2;
+      const panelX = centerX - panelW / 2;
+      const panelY = offsetY;
+
       // Background panel
       ctx.fillStyle = `rgba(0, 50, 100, ${alpha * 0.8})`;
-      const textWidth = ctx.measureText(msg.text).width || 300;
-      ctx.fillRect(centerX - textWidth/2 - 20, offsetY - 25, textWidth + 40, 40);
-      
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+
       // Border
       ctx.strokeStyle = `rgba(100, 150, 255, ${alpha})`;
       ctx.lineWidth = 2;
-      ctx.strokeRect(centerX - textWidth/2 - 20, offsetY - 25, textWidth + 40, 40);
-      
+      ctx.strokeRect(panelX, panelY, panelW, panelH);
+
       // Text
-      ctx.font = '18px Arial';
-      ctx.textAlign = 'center';
       ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-      ctx.fillText(msg.text, centerX, offsetY);
-      
-      offsetY += 50;
+      let ty = panelY + padY + 13;
+      for (const line of lines) {
+        ctx.fillText(line, panelX + padX, ty);
+        ty += lineHeight;
+      }
+
+      offsetY += panelH + 8;
     }
     
     ctx.restore();
@@ -1703,9 +2160,10 @@ export class GameEngine {
   /**
    * Destroy rocket completely - triggers explosion phase first
    */
-  private destroyRocket(): void {
+  private destroyRocket(reason?: string): void {
     this.explosionPhase = true;
     this.explosionTimer = 0;
+    if (reason) this.gameOverReason = reason;
     
     // Cut engines and stop physics
     this.gameState.rocket.isEngineIgnited = false;
@@ -1754,7 +2212,8 @@ export class GameEngine {
     
     ctx.fillStyle = '#ffffff';
     ctx.font = '24px monospace';
-    ctx.fillText('Rocket destroyed in staging explosion!', this.canvas.width / 2, this.canvas.height / 2 + 20);
+    const reason = this.gameOverReason || 'Vehicle destroyed';
+    ctx.fillText(reason, this.canvas.width / 2, this.canvas.height / 2 + 20);
     
     // Countdown
     const timeLeft = Math.ceil(5.0 - this.gameOverTimer);
