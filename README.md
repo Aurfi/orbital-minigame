@@ -61,5 +61,21 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 - Path aliases: `@/`, `@/core`, `@/physics`, `@/rendering`, `@/ui`
 - Tests: Vitest (jsdom) with coverage; Biome for lint/format
 
+## Architecture (dev)
+- Core loop: `GameEngine` orchestrates update → render. Physics uses a semi‑implicit Euler integrator with fixed substeps. Rendering is done with `CanvasRenderer` and HUD overlays in `HUDSystem`.
+- Physics/math: under `src/physics/` — `Vector2`, `RigidBody`, `AtmosphericPhysics`, `OrbitalMechanics`, `PhysicsIntegrator`.
+- Rendering/UI: under `src/rendering/` and `src/ui/` — canvas primitives, rocket renderer, HUD, and fact bubbles (`FactBubblesSystem`).
+- Autopilot: `src/core/Autopilot.ts` parses simple commands and drives the engine through a tiny scheduler.
+- Data: `src/data/` for assets like space facts.
+
+Refactor plan
+- We are gradually extracting systems from `GameEngine.ts` to improve maintainability. The fact bubbles overlay has been moved to `src/ui/FactBubbles.ts`. Next candidates: input handling, sound/sfx bridge, and staging visuals.
+
+## Contributing
+- Use Docker workflows for dev/test/lint.
+- Format and lint: `docker-compose run --rm game-dev npm run format && npm run lint`.
+- Tests: `docker-compose run --rm game-test` (or `game-test-watch`). Add tests for new physics helpers and deterministic engine utilities.
+- PRs: include rationale and screenshots/GIFs for HUD changes. Keep commits focused and code styled. Avoid unrelated changes.
+
 ## License
 MIT, If there is anything usefull in here

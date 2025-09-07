@@ -10,6 +10,7 @@ import { RocketRenderer } from '../rendering/RocketRenderer.js';
 import { HUDSystem } from '../ui/HUDSystem.js';
 import { RocketConfiguration } from './RocketConfiguration.js';
 import spaceFacts from '../data/space_facts.json';
+import { FactBubblesSystem } from '../ui/FactBubbles.js';
 import type { GameState } from './types.js';
 import { SoundSystem } from './SoundSystem.js';
 import { SoundPaths, getEngineBaseGainForStage } from './AudioConfig.js';
@@ -106,6 +107,7 @@ export class GameEngine {
   private apHold: 'none'|'prograde'|'retrograde'|'up'|'target' = 'none';
   private apTargetRot: number | null = null;
   private apLogger: ((msg: string)=>void) | null = null; // small log hook for console
+  private factSystem?: FactBubblesSystem;
 
   // Aerodynamics (effective values for HUD/limits)
   // Computed each frame from attitude and Mach to reflect current airflow.
@@ -170,6 +172,8 @@ export class GameEngine {
     
     // Setup event listeners
     this.setupEventListeners();
+    // Facts system
+    this.factSystem = new FactBubblesSystem(this.canvas);
     // Single mode (manual) — scripts can run any time
     this.gameState.autopilotEnabled = false;
   }
@@ -773,7 +777,8 @@ export class GameEngine {
     
     // Facts update/spawn after camera updates so positioning is stable
     this.updateFactBubbles(deltaTime);
-    this.maybeSpawnFact();
+    // Update facts system
+    this.factSystem?.update(Date.now(), this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude()));
 
     // Big success cues (audio)
     this.checkSuccessSounds();
@@ -1300,7 +1305,8 @@ export class GameEngine {
       this.hudSystem.render(this.renderer, this.gameState, this.missionTimer);
       if (this.debugEnabled) this.renderDebugOverlay();
       // Draw space fact bubbles as UI overlay (HUD-like)
-      this.drawFactBubbles();
+    // Draw facts overlay
+    this.factSystem?.render();
       // Draw atmosphere messages on top of HUD
       this.drawAtmosphereMessages();
     }
