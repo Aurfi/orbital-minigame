@@ -7,6 +7,9 @@ import pngToIco from 'png-to-ico';
 const root = path.resolve(process.cwd());
 const srcSvg = path.join(root, 'public', 'favicon_source.svg');
 const outPng = path.join(root, 'public', 'favicon.png');
+const outPng16 = path.join(root, 'public', 'favicon-16x16.png');
+const outPng32 = path.join(root, 'public', 'favicon-32x32.png');
+const outApple = path.join(root, 'public', 'apple-touch-icon.png');
 const outIco = path.join(root, 'public', 'favicon.ico');
 
 async function ensureSource() {
@@ -31,9 +34,15 @@ async function ensureSource() {
 
 async function build() {
   await ensureSource();
-  // Generate a 64x64 PNG
-  const png64 = await sharp(srcSvg).resize(64, 64, { fit: 'contain' }).png().toBuffer();
+  // Generate common PNGs (64, 32, 16, and Apple touch 180)
+  const png64 = await sharp(srcSvg).resize(64, 64, { fit: 'contain', background: { r: 13, g: 19, b: 35, alpha: 1 } }).png().toBuffer();
+  const png32 = await sharp(srcSvg).resize(32, 32, { fit: 'contain', background: { r: 13, g: 19, b: 35, alpha: 1 } }).png().toBuffer();
+  const png16 = await sharp(srcSvg).resize(16, 16, { fit: 'contain', background: { r: 13, g: 19, b: 35, alpha: 1 } }).png().toBuffer();
+  const png180 = await sharp(srcSvg).resize(180, 180, { fit: 'contain', background: { r: 13, g: 19, b: 35, alpha: 1 } }).png().toBuffer();
   await fs.writeFile(outPng, png64);
+  await fs.writeFile(outPng32, png32);
+  await fs.writeFile(outPng16, png16);
+  await fs.writeFile(outApple, png180);
 
   // Generate ICO (multiple sizes)
   const sizes = [16, 32, 48];
@@ -43,7 +52,7 @@ async function build() {
   const ico = await pngToIco(pngs);
   await fs.writeFile(outIco, ico);
 
-  console.log('Favicons generated:', outPng, outIco);
+  console.log('Favicons generated:', outPng, outPng32, outPng16, outApple, outIco);
 }
 
 build().catch((err) => {
