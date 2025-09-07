@@ -82,10 +82,17 @@ export class HUDSystem {
     const cssH = this.canvas.height;
     const minDim = Math.min(cssW, cssH);
     let uiScale = 1.0;
-    if (minDim <= 700) uiScale = 1.35; // phone
-    else if (minDim <= 1000) uiScale = 1.15; // small tablets
-    else if (minDim >= 2000) uiScale = 0.8; // ultra-wide/4k
-    else if (minDim >= 1600) uiScale = 0.85; // very large screens
+    if (minDim <= 700) {
+      uiScale = 1.35; // phone
+    } else if (minDim <= 1000) {
+      uiScale = 1.15; // small tablets
+    } else if (minDim < 1600) {
+      uiScale = 1.0; // explicitly keep 1.0 between 1200 and 1600 (and 1000..1600)
+    } else if (minDim < 2000) {
+      uiScale = 0.85; // very large screens
+    } else {
+      uiScale = 0.8; // ultra-wide/4k
+    }
 
     // HUD styling
     ctx.font = `${Math.round(14 * uiScale)}px monospace`;
