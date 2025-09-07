@@ -1,6 +1,6 @@
 # Mini Orbital Launch
 
-A small 2D rocket sandbox made by a KSP fan. Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be a little fun.
+A small 2D rocket sandbox available at https://oursmalin.ovh Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be a little fun.
 
 ## What It Is
 - A simple web game that shows the feel of orbital flight: throttle, gravity turn, coasting to apoapsis, and circularization.
