@@ -109,7 +109,7 @@ export class HUDSystem {
     // Layout metrics
     const panelX = 10;
     const panelY = 10;
-    const panelW = 280 * uiScale; // a bit narrower; content still fits
+    const panelW = 240 * uiScale; // narrower; content still fits
     const startY = 24 * uiScale;
     const lineHeight = 18 * uiScale; // tighter line spacing
     const gaugeH = 18 * uiScale;
@@ -145,13 +145,21 @@ export class HUDSystem {
     const area = (rocket.crossSectionalArea ?? gameState.world.defaultCrossSectionalArea ?? 10);
     const vTerm = AtmosphericPhysics.calculateTerminalVelocity(mass, density, cd, area, gravity);
     const vMax = (isFinite(vTerm) ? vTerm : 10_000) * 1.25 + 50;
-    // Determine label and color: Safe (green), Unsafe (orange), Too fast (red)
+    // Determine label and color: only Safe (green) or Unsafe (orange→red)
     let label = 'Safe';
     let safetyColor = '#00ff66'; // green
     if (altitude < 80_000 && isFinite(vTerm)) {
       const ratio = velocity / Math.max(1, vMax);
-      if (ratio > 1.10) { label = 'Too fast'; safetyColor = '#ff3333'; }
-      else if (ratio > 0.85) { label = 'Unsafe'; safetyColor = '#ff9933'; }
+      if (ratio > 0.85) {
+        label = 'Unsafe';
+        // Blend color from orange (#ff9933) at 0.85 up to red (#ff3333) at 1.10
+        const t = Math.max(0, Math.min(1, (ratio - 0.85) / (1.10 - 0.85)));
+        const mix = (a: number, b: number, k: number) => Math.round(a + (b - a) * k);
+        const r = mix(0xff, 0xff, t);
+        const g = mix(0x99, 0x33, t);
+        const b = mix(0x33, 0x33, t);
+        safetyColor = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+      }
     }
     ctx.fillStyle = safetyColor;
     // Place label next to the velocity text, with a small gap; clamp to panel right
@@ -227,7 +235,10 @@ export class HUDSystem {
 
     // Draw fuel gauge
     y += lineHeight + 12 * uiScale; // add full line spacing before gauge
-    this.drawFuelGauge(ctx, 20, y, fuel, rocket, gameState, uiScale);
+    // Center a slightly longer gauge within the panel
+    const desiredGW = Math.max(180 * uiScale, Math.min(panelW - 30 * uiScale, 220 * uiScale));
+    const gaugeX = panelX + (panelW - desiredGW) / 2;
+    this.drawFuelGauge(ctx, gaugeX, y, fuel, rocket, gameState, uiScale, desiredGW);
 
     // Draw mission timer and restart button in top-right corner
     this.drawMissionTimer(ctx, missionTimer || 0, uiScale);
@@ -909,7 +920,7 @@ export class HUDSystem {
   /**
    * Draw fuel gauge for current stage
    */
-  private drawFuelGauge(ctx: CanvasRenderingContext2D, x: number, y: number, totalFuel: number, rocket: any, gameState: GameState, uiScale: number = 1): void {
+  private drawFuelGauge(ctx: CanvasRenderingContext2D, x: number, y: number, totalFuel: number, rocket: any, gameState: GameState, uiScale: number = 1, forcedWidth?: number): void {
     const currentStage = rocket.stages[rocket.currentStage];
     if (!currentStage) return;
 
@@ -918,7 +929,7 @@ export class HUDSystem {
     const fuelRatio = Math.min(1, Math.max(0, currentFuel / maxFuel));
 
     // Gauge dimensions
-    const gaugeWidth = 200 * uiScale;
+    const gaugeWidth = (typeof forcedWidth === 'number' ? forcedWidth : 200 * uiScale);
     const gaugeHeight = 20 * uiScale;
 
     // Label

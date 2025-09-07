@@ -1563,6 +1563,11 @@ export class GameEngine {
 
   private maybeSpawnFact(): void {
     const t = this.gameState.currentTime;
+    // Skip facts on phones or small screens (<1000 CSS px)
+    const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+    const cssW = (this.canvas as HTMLCanvasElement).clientWidth || Math.round(this.canvas.width / dpr);
+    const isCoarse = (typeof window !== 'undefined') && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    if (isCoarse || cssW < 1000) return;
     const altitude = this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude());
     // Show facts only once above 5 km; no upper limit
     const inRange = altitude >= 5_000; // from 5 km upward
