@@ -89,7 +89,8 @@ export class RocketConfiguration {
 
     return activeStages.reduce((total, stage) => {
       const thrustUsed = stage.thrust * throttle;
-      const fuelRate = thrustUsed / (stage.specificImpulse * 9.81); // g₀ = 9.81 m/s²
+      const ispEff = this.getEffectiveIsp(stage, throttle);
+      const fuelRate = thrustUsed / (ispEff * 9.81); // g₀ = 9.81 m/s²
       return total + fuelRate;
     }, 0);
   }
@@ -109,7 +110,8 @@ export class RocketConfiguration {
     let fuelConsumed = false;
     for (const stage of activeStages) {
       const thrustUsed = stage.thrust * throttle;
-      const fuelRate = thrustUsed / (stage.specificImpulse * 9.81);
+      const ispEff = this.getEffectiveIsp(stage, throttle);
+      const fuelRate = thrustUsed / (ispEff * 9.81);
       const fuelToConsume = fuelRate * deltaTime;
 
       if (stage.fuelRemaining > 0) {
@@ -119,6 +121,17 @@ export class RocketConfiguration {
     }
 
     return fuelConsumed;
+  }
+
+  /**
+   * Effective Isp vs throttle: reward lower TWR with slightly better ISP.
+   * At 100% throttle → 100% Isp. At 10% throttle → ~110% Isp (linear in between).
+   */
+  private getEffectiveIsp(stage: StageConfiguration, throttle: number): number {
+    const base = stage.specificImpulse;
+    const t = Math.max(0.1, Math.min(1, throttle));
+    const bonus = 0.1 * ((1 - t) / 0.9); // 0 at t=1, 0.1 at t=0.1
+    return base * (1 + Math.max(0, Math.min(0.1, bonus)));
   }
 
   /**
@@ -277,10 +290,10 @@ export class RocketConfiguration {
         specificImpulse: 265, // seconds (sea-level realistic)
         seaLevelIsp: 265,
         vacuumIsp: 300,
-        propellantMass: 25_000, // 25 tons
+        propellantMass: 20_000, // 20 tons (reduced)
         dryMass: 3_000, // 3 tons (a bit heavier)
         isActive: true,
-        fuelRemaining: 25_000,
+        fuelRemaining: 20_000,
       },
       {
         name: 'Second Stage',

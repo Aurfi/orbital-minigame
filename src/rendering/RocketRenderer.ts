@@ -35,6 +35,10 @@ export interface RocketVisualConfig {
 // not strict real-world scale.
 export class RocketRenderer {
   private config: RocketVisualConfig;
+  // Optional sprite support: full rocket and upper-stage-only skins
+  private spriteFull: HTMLImageElement | null = null;
+  private spriteUpper: HTMLImageElement | null = null;
+  private spritesLoaded = false;
   
   constructor(config?: Partial<RocketVisualConfig>) {
     this.config = {
@@ -66,6 +70,36 @@ export class RocketRenderer {
       
       ...config
     };
+
+    // Try to load optional sprites if present in /assets
+    // - /assets/rocket_full.png    (whole rocket)
+    // - /assets/upper_stage.png    (upper stage only)
+    // These are optional; renderer will fall back to vector shapes if missing.
+    try {
+      const tryLoad = (candidates: string[], set: (img: HTMLImageElement)=>void) => {
+        const attempt = (idx: number) => {
+          if (idx >= candidates.length) return;
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => { set(img); this.spritesLoaded = true; };
+          img.onerror = () => attempt(idx + 1);
+          img.src = candidates[idx];
+        };
+        attempt(0);
+      };
+      tryLoad([
+        '/assets/rocket_full.png',
+        '/assets/rocket_full.jpg',
+        '/assets/rocket_full.jpeg',
+        '/assets/rocket_full.webp',
+      ], (img)=>{ this.spriteFull = img; });
+      tryLoad([
+        '/assets/upper_stage.png',
+        '/assets/upper_stage.jpg',
+        '/assets/upper_stage.jpeg',
+        '/assets/upper_stage.webp',
+      ], (img)=>{ this.spriteUpper = img; });
+    } catch {}
   }
 
   /**
@@ -84,12 +118,40 @@ export class RocketRenderer {
 
     // 0 rotation = rocket points up visually; use same sign as physics
     renderer.drawRotated(position, rotation, () => {
-      this.drawRocketBody(renderer, rocketState, yOffset);
-      
-      if (isEngineOn && throttle > 0) {
-        this.drawExhaust(renderer, throttle, rocketState);
+      const useSprites = !!(this.spriteFull && this.spriteUpper);
+      if (useSprites) {
+        // When using sprites, draw the exhaust first so it appears behind the
+        // sprite and only shows through transparent areas.
+        const currentStage = rocketState.currentStage ?? 0;
+        const exLift = currentStage === 0 ? 10 : 14; // start plume lower for stage 2
+        (rocketState as any).exhaustY = yOffset + exLift;
+        if (isEngineOn && throttle > 0) {
+          this.drawExhaust(renderer, throttle, rocketState);
+        }
+        // Now draw sprite slightly larger and nudged upward so hitbox sits lower
+        const img = currentStage === 0 ? this.spriteFull! : this.spriteUpper!;
+        const totalDims = this.getRocketBounds(rocketState);
+        // Per‑stage sprite scaling. Upper stage should be shorter and slightly wider.
+        const fullW = totalDims.width * 1.15;
+        const fullH = totalDims.height * 1.15;
+        const upperW = totalDims.width * 1.35;  // a bit wider
+        const upperH = totalDims.height * 0.65; // still shorter, but less extreme
+        const drawW = currentStage === 0 ? fullW : upperW;
+        const drawH = currentStage === 0 ? fullH : upperH;
+        const spriteYOffset = currentStage === 0 ? 8 : 0;
+        renderer.drawSprite(
+          img,
+          new Vector2(0, yOffset + totalDims.height / 2 + spriteYOffset),
+          drawW,
+          drawH,
+        );
+      } else {
+        // Fallback vector rocket: draw body first (sets exhaust anchor), then exhaust
+        this.drawRocketBody(renderer, rocketState, yOffset);
+        if (isEngineOn && throttle > 0) {
+          this.drawExhaust(renderer, throttle, rocketState);
+        }
       }
-      
       // Draw separated stages (visual decoupling)
       this.drawSeparatedStages(renderer, rocketState);
     });
@@ -197,15 +259,20 @@ export class RocketRenderer {
       // First stage - large exhaust
       exhaustScale = 1.5;
     } else if (currentStage === 1) {
-      // Second stage - medium exhaust 
-      exhaustScale = 1.0;
+      // Second stage - make plume smaller (narrower & shorter)
+      exhaustScale = 0.45;
     } else {
       // Upper stages - smaller exhaust
       exhaustScale = 0.7;
     }
     
-    const exhaustLength = this.config.exhaustLength * exhaustIntensity * exhaustScale;
-    const exhaustWidth = this.config.exhaustWidth * exhaustIntensity * exhaustScale;
+    // Allow stage-specific shaping (length vs width)
+    let exhaustLength = this.config.exhaustLength * exhaustIntensity * exhaustScale;
+    let exhaustWidth = this.config.exhaustWidth * exhaustIntensity * exhaustScale;
+    if (currentStage === 1) {
+      exhaustLength *= 0.8; // even shorter for stage 2
+      exhaustWidth *= 0.85; // slightly narrower
+    }
     // Expose current exhaust dimensions for external effects anchoring
     if (rocketState) {
       rocketState.exhaustLength = exhaustLength;
@@ -216,13 +283,16 @@ export class RocketRenderer {
     const exhaustY = rocketState.exhaustY || 0;
     
     // Main exhaust flame (positioned at active stage bottom)
-    const exhaustPos = new Vector2(-exhaustWidth / 2, exhaustY - exhaustLength);
+    // Shift slightly to the right for stage 2 to align with nozzle in art
+    // (previously 5px; adjusted to 2px per feedback)
+    const xShift = currentStage === 1 ? 2 : 0;
+    const exhaustPos = new Vector2(-exhaustWidth / 2 + xShift, exhaustY - exhaustLength);
     renderer.drawRectangle(exhaustPos, exhaustWidth, exhaustLength, this.config.exhaustColor);
     
     // Inner core (brighter)
     const coreWidth = exhaustWidth * 0.6;
     const coreLength = exhaustLength * 0.8;
-    const corePos = new Vector2(-coreWidth / 2, exhaustY - coreLength);
+    const corePos = new Vector2(-coreWidth / 2 + xShift, exhaustY - coreLength);
     renderer.drawRectangle(corePos, coreWidth, coreLength, this.config.exhaustCoreColor);
     
     // Exhaust particles (simple effect)
@@ -325,20 +395,29 @@ export class RocketRenderer {
    */
   getRocketBounds(rocketState: RocketState): { width: number; height: number } {
     const stages = rocketState.stages || [];
-    let totalHeight = this.config.payloadHeight + 4; // Include nose cone
-    
-    for (const stage of stages) {
-      if (stage === stages[0]) {
-        totalHeight += this.config.stage1Height;
-      } else if (stage === stages[1]) {
-        totalHeight += this.config.stage2Height;
+    const start = Math.max(0, Math.min(rocketState.currentStage ?? 0, stages.length));
+    let totalHeight = this.config.payloadHeight + 4; // include nose cone
+    let maxWidth = this.config.payloadWidth;
+
+    // Sprite-aware scaling factors (must match drawSprite)
+    const useSprites = !!(this.spriteFull && this.spriteUpper);
+    const fullHScale = 1.15;
+    const fullWScale = 1.15;
+    const upperHScale = 0.65; // shorter, adjusted to match visual sprite
+    const upperWScale = 1.35; // a bit wider
+
+    for (let i = start; i < stages.length; i++) {
+      if (i === 0) {
+        totalHeight += useSprites ? this.config.stage1Height * fullHScale : this.config.stage1Height;
+        maxWidth = Math.max(maxWidth, useSprites ? this.config.stage1Width * fullWScale : this.config.stage1Width);
+      } else if (i === 1) {
+        totalHeight += useSprites ? this.config.stage2Height * upperHScale : this.config.stage2Height;
+        maxWidth = Math.max(maxWidth, useSprites ? this.config.stage2Width * upperWScale : this.config.stage2Width);
       } else {
         totalHeight += this.config.payloadHeight;
+        maxWidth = Math.max(maxWidth, this.config.payloadWidth);
       }
     }
-    
-    const maxWidth = Math.max(this.config.stage1Width, this.config.stage2Width, this.config.payloadWidth);
-    
     return { width: maxWidth, height: totalHeight };
   }
 

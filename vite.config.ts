@@ -2,6 +2,9 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // Base path for assets. For GitHub Pages deployments we pass VITE_BASE
+  // as "/<repo-name>/" via CI; locally it stays "/".
+  base: process.env.VITE_BASE || '/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

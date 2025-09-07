@@ -2,9 +2,8 @@
 node_modules
 npm-debug.log*
 
-# Build outputs
+# Build outputs (avoid copying host builds)
 dist
-build
 
 # Environment files
 .env
@@ -25,20 +24,9 @@ Thumbs.db
 
 # Git
 .git
-.gitignore
-
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
-
-# Documentation
-README.md
-docs/
 
 # Test coverage
 coverage/
 
 # Logs
-logs
 *.log

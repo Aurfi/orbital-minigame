@@ -14,6 +14,7 @@ import type { GameState } from './types.js';
 import { SoundSystem } from './SoundSystem.js';
 import { SoundPaths, getEngineBaseGainForStage } from './AudioConfig.js';
 import { isSoundEnabled } from './Settings.js';
+import { Autopilot } from './Autopilot.js';
 
 // Main game engine class
 export class GameEngine {
@@ -73,6 +74,9 @@ export class GameEngine {
   
   // Game speed controls
   private gameSpeed = 1; // 1x, 2x, 3x speed multiplier
+
+  // HUD visibility (debug helper). Handy to isolate rendering issues.
+  private showHUD = true;
   
   /**
    * Safe Vector2 normalize utility to avoid normalize errors
@@ -102,6 +106,10 @@ export class GameEngine {
   private heatLevel = 0; // 0-100 heat accumulation
   private hasBurnedUp = false;
   private padBaseAngle: number = Math.PI / 2; // base ground angle for pad/site
+  private autopilot?: Autopilot;
+  private apHold: 'none'|'prograde'|'retrograde'|'up' = 'none';
+  private apTargetRot: number | null = null;
+  private apLogger: ((msg: string)=>void) | null = null; // small log hook for console
 
   // Aerodynamics (effective values for HUD/limits)
   // Computed each frame from attitude and Mach to reflect current airflow.
@@ -129,6 +137,7 @@ export class GameEngine {
     this.hudSystem = new HUDSystem(canvas);
     this.rocketRenderer = new RocketRenderer();
     this.physicsIntegrator = new PhysicsIntegrator();
+    this.autopilot = new Autopilot(this);
 
     this.renderer.setCamera(this.camera);
 
@@ -152,7 +161,7 @@ export class GameEngine {
     // Setup camera to proper initial position and zoom
     this.camera.setTarget(this.gameState.rocket.position);
     this.camera.position = this.gameState.rocket.position.clone();
-    this.camera.setZoom(0.5); // Start very zoomed in for detailed rocket view
+    this.camera.setZoom(0.8); // Start more zoomed in for detailed rocket view
     
     // Initialize timer and show welcome message
     this.gameStartTime = Date.now();
@@ -165,6 +174,59 @@ export class GameEngine {
     
     // Setup event listeners
     this.setupEventListeners();
+    // Single mode (manual) — scripts can run any time
+    this.gameState.autopilotEnabled = false;
+  }
+
+  toggleAutopilot(): void {
+    this.autopilotEnabled = !this.autopilotEnabled;
+    this.gameState.autopilotEnabled = this.autopilotEnabled;
+    // Notify UI outside canvas to show/hide the console
+    document.dispatchEvent(new CustomEvent('autopilot-toggle', { detail: { enabled: this.autopilotEnabled } }));
+  }
+
+  isAutopilotOn(): boolean {
+    return this.autopilotEnabled;
+  }
+
+  /** Get apoapsis altitude estimate (m) from HUD cache to stay consistent. */
+  getApoapsisAltitude(): number {
+    const info = (this.hudSystem as any).getLastProjectedInfo?.();
+    if (info && typeof info.apoAlt === 'number') return info.apoAlt;
+    return 0;
+  }
+
+  /** Get periapsis altitude estimate (m) from HUD cache for consistency. */
+  getPeriapsisAltitude(): number {
+    const info = (this.hudSystem as any).getLastProjectedInfo?.();
+    if (info && typeof info.periAlt === 'number') return info.periAlt;
+    return 0;
+  }
+
+  /** Radial velocity (m/s): positive when moving away from planet center. */
+  getRadialVelocity(): number {
+    const p = this.gameState.rocket.position;
+    const v = this.gameState.rocket.velocity;
+    const r = Math.hypot(p.x, p.y);
+    if (r < 1e-6) return 0;
+    const ux = p.x / r, uy = p.y / r;
+    return v.x * ux + v.y * uy;
+  }
+
+  /** Current altitude above surface (m). */
+  getAltitude(): number {
+    return this.gameState.world.getAltitude(this.gameState.rocket.position.magnitude());
+  }
+
+  /** Fuel remaining (kg) in the active stage, or NaN if not available. */
+  getActiveStageFuel(): number {
+    try {
+      const idx = this.rocketConfig.getCurrentStageIndex();
+      const st = this.rocketConfig.stages[idx];
+      return typeof st?.fuelRemaining === 'number' ? st.fuelRemaining : Number.NaN;
+    } catch {
+      return Number.NaN;
+    }
   }
 
   /**
@@ -246,6 +308,7 @@ export class GameEngine {
         currentStage: 0,
         stages: this.rocketConfig.stages,
       },
+      autopilotEnabled: true,
     };
 
     // Adjust initial position so the visual bottom sits on the pad despite centered rendering
@@ -304,6 +367,12 @@ export class GameEngine {
    * @param event Keyboard event
    */
   private handleKeyDown(event: KeyboardEvent): void {
+    // When a script is running, ignore keyboard controls (except HUD toggle and Menu)
+    if (this.autopilot?.isRunning()) {
+      if (event.code === 'KeyR') { this.goToMenu(false); return; }
+      if (event.code === 'KeyH') { this.showHUD = !this.showHUD; return; }
+      return;
+    }
     switch (event.code) {
       case 'Space':
         event.preventDefault();
@@ -347,7 +416,12 @@ export class GameEngine {
         this.togglePause();
         break;
       case 'KeyR':
-        this.restart();
+        this.goToMenu(false);
+        break;
+      case 'KeyH':
+        // Toggle HUD on/off (debug). Helps check if an overlay artifact comes from HUD.
+        this.showHUD = !this.showHUD;
+        console.log(`HUD ${this.showHUD ? 'ON' : 'OFF'}`);
         break;
       // Auto-release clamps on ignite; no manual key needed
       // 'L' key no longer used
@@ -361,6 +435,7 @@ export class GameEngine {
    * @param _event Keyboard event
    */
   private handleKeyUp(_event: KeyboardEvent): void {
+    if (this.autopilotEnabled) return;
     const event = _event;
     switch (event.code) {
       case 'ArrowLeft':
@@ -379,8 +454,10 @@ export class GameEngine {
    */
   private handleCanvasClick(event: MouseEvent): void {
     const rect = this.canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const dpr = window.devicePixelRatio || 1;
+    // Convert to canvas device pixels because HUD bounds are in device pixels
+    const x = (event.clientX - rect.left) * dpr;
+    const y = (event.clientY - rect.top) * dpr;
 
     // Check for restart button click (stored in HUDSystem)
     const hudSystem = this.hudSystem as any;
@@ -388,7 +465,17 @@ export class GameEngine {
       const button = hudSystem.restartButtonBounds;
       if (x >= button.x && x <= button.x + button.width && 
           y >= button.y && y <= button.y + button.height) {
-        this.restart();
+        this.goToMenu(this.autopilotEnabled);
+        return;
+      }
+    }
+
+    // Check for autopilot prefill button
+    if ((hudSystem as any).autopilotButtonBounds) {
+      const b = (hudSystem as any).autopilotButtonBounds;
+      if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) {
+        // Prefill the console with an ascent script to ~100km orbit
+        document.dispatchEvent(new CustomEvent('prefill-autopilot-script'));
         return;
       }
     }
@@ -523,6 +610,13 @@ export class GameEngine {
     
     // Reinitialize game state
     this.initializeGameState();
+    // Apply pending autopilot mode if requested
+    if (this.pendingAutopilotMode !== null) {
+      this.autopilotEnabled = this.pendingAutopilotMode;
+      this.gameState.autopilotEnabled = this.pendingAutopilotMode;
+      document.dispatchEvent(new CustomEvent('autopilot-toggle', { detail: { enabled: this.autopilotEnabled } }));
+      this.pendingAutopilotMode = null;
+    }
     this.gameStartTime = Date.now();
     this.missionTimer = 0;
     
@@ -530,6 +624,20 @@ export class GameEngine {
     this.start();
     
     console.log('✅ Game restarted successfully!');
+  }
+
+  private restartWithMode(autopilot: boolean): void {
+    this.goToMenu(autopilot);
+  }
+
+  // Reload the page like F5 and optionally persist autopilot mode for next launch
+  private goToMenu(autopilot?: boolean): void {
+    try {
+      if (typeof autopilot === 'boolean') {
+        localStorage.setItem('startAutoPilot', autopilot ? '1' : '0');
+      }
+    } catch {}
+    window.location.reload();
   }
 
   /**
@@ -598,7 +706,7 @@ export class GameEngine {
     if (this.isGameOver) {
       this.gameOverTimer += deltaTime;
       if (this.gameOverTimer >= 5.0) {
-        this.restart();
+        this.goToMenu(this.autopilotEnabled);
       }
       // Update explosions and particles even when game over
       this.updateExplosions(deltaTime);
@@ -616,6 +724,8 @@ export class GameEngine {
     this.physicsIntegrator.update(deltaTime, (dt) => {
       this.updatePhysics(dt);
     });
+    // Script engine tick (runs only when a queue exists)
+    this.autopilot?.update(deltaTime);
 
     // Auto-staging removed - user must manually stage
 
@@ -660,7 +770,7 @@ export class GameEngine {
       // This maintains the detailed view until orbit is achieved
       if (altitude < 50_000) {
         // Keep good zoom level until well into atmosphere
-        const targetZoom = 0.5; // Maintain detailed view
+        const targetZoom = 0.75; // Maintain closer, detailed view near surface
         this.camera.setZoom(targetZoom);
       }
     }
@@ -678,7 +788,50 @@ export class GameEngine {
    */
   private updateAttitude(deltaTime: number): void {
     // Left input produces positive rotation; right produces negative.
-    const input = (this.turnLeft ? 1 : 0) - (this.turnRight ? 1 : 0);
+    let input = (this.turnLeft ? 1 : 0) - (this.turnRight ? 1 : 0);
+    // Script/hold overrides manual input when a hold/target is set
+    if (this.apHold !== 'none') {
+      // Compute target
+      if (this.apHold === 'up') {
+        this.apTargetRot = 0;
+      } else if (this.apHold === 'prograde' || this.apHold === 'retrograde') {
+        const v = this.rocketBody.velocity;
+        const speed = v.magnitude();
+        // Prograde is the inertial velocity direction; gravity and thrust
+        // naturally change this vector over time, so following it yields a
+        // gravity turn.
+        let velAngle = this.rocketBody.rotation;
+        if (speed > 0.5) {
+          // Angle measured from +Y (up), positive to the left. For (vx,vy): atan2(-vx, vy)
+          velAngle = Math.atan2(-v.x, v.y);
+        }
+        // Blend toward prograde with altitude to avoid fighting near the pad.
+        const alt = this.gameState.world.getAltitude(this.rocketBody.position.magnitude());
+        const a0 = 2000;   // start blending (2 km)
+        const a1 = 15000;  // fully trust prograde (15 km)
+        const tRaw = (alt - a0) / Math.max(1, (a1 - a0));
+        const t = Math.max(0, Math.min(1, tRaw));
+        // Smoothstep for nicer response
+        const s = t * t * (3 - 2 * t);
+        const upAngle = 0; // straight up
+        const targetPro = (this.apHold === 'prograde') ? velAngle : velAngle + Math.PI;
+        // Shortest-arc blend between up and prograde angles
+        let d = targetPro - upAngle;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        this.apTargetRot = upAngle + d * s;
+      } else if (this.apHold === 'target') {
+        // apTargetRot already set explicitly by a command
+        // keep current target
+      }
+      // Determine shortest direction
+      if (this.apTargetRot !== null) {
+        let d = this.apTargetRot - this.rocketBody.rotation;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        input = d > 0.02 ? 1 : d < -0.02 ? -1 : 0; // deadzone
+      }
+    }
 
     // Integrate angular velocity with acceleration and clamp to max rate
     this.angularVelocity += input * this.angularAccel * deltaTime;
@@ -724,6 +877,57 @@ export class GameEngine {
     const k = 10; // smoothing speed (higher = snappier)
     const t = 1 - Math.exp(-k * Math.max(0, deltaTime));
     this.visualRotation = a + d * t;
+  }
+
+  // Public helpers for Autopilot
+  setAutopilotHold(mode: 'none'|'prograde'|'retrograde'|'up'): void {
+    this.apHold = mode;
+  }
+  setAutopilotTargetAngle(deg: number): void {
+    // Positive degrees rotate left; east is to the right, so negative degrees for east.
+    const rad = (deg * Math.PI) / 180;
+    this.apTargetRot = rad;
+    this.apHold = 'target';
+  }
+  isEngineOn(): boolean { return this.gameState.rocket.isEngineIgnited; }
+  getCurrentTWR(): number {
+    const g = this.gameState.world.getGravitationalAcceleration(this.rocketBody.position.magnitude());
+    const thrust = this.rocketConfig.getCurrentThrust() * this.gameState.rocket.throttle;
+    const w = this.rocketBody.mass * g;
+    return w > 0 ? thrust / w : 0;
+  }
+
+  // Small helpers for the external console UI
+  setAutopilotLogger(fn: (msg: string)=>void): void {
+    // simple log forwarder used by the console UI
+    this.apLogger = fn;
+    this.autopilot?.setLogger((m)=>{ if (this.apLogger) this.apLogger(m); });
+  }
+  runAutopilotScript(text: string): void {
+    if (!this.autopilot) return;
+    this.autopilot.runScript(text);
+  }
+  runAutopilotCommand(cmd: string): void {
+    if (!this.autopilot) return;
+    this.autopilot.runCommand(cmd);
+  }
+  stopAutopilot(): void {
+    this.autopilot?.stop();
+  }
+
+  /** Set game speed (1, 3, 10, 50). Updates UI buttons if present. */
+  setGameSpeed(speed: number): void {
+    const allowed = [1, 3, 10, 50];
+    const s = allowed.includes(speed) ? speed : 1;
+    this.gameSpeed = s;
+    try {
+      const btns = document.querySelectorAll('.speed-btn');
+      btns.forEach((el) => {
+        const b = el as HTMLButtonElement;
+        const val = parseInt(b.dataset.speed || '1');
+        if (val === s) b.classList.add('active'); else b.classList.remove('active');
+      });
+    } catch {}
   }
 
   /**
@@ -1096,13 +1300,14 @@ export class GameEngine {
     this.renderer.endFrame();
 
     // Draw HUD
-    this.hudSystem.render(this.renderer, this.gameState, this.missionTimer);
-    if (this.debugEnabled) this.renderDebugOverlay();
-    // Draw space fact bubbles as UI overlay (HUD-like)
-    this.drawFactBubbles();
-    
-    // Draw atmosphere messages on top of HUD
-    this.drawAtmosphereMessages();
+    if (this.showHUD) {
+      this.hudSystem.render(this.renderer, this.gameState, this.missionTimer);
+      if (this.debugEnabled) this.renderDebugOverlay();
+      // Draw space fact bubbles as UI overlay (HUD-like)
+      this.drawFactBubbles();
+      // Draw atmosphere messages on top of HUD
+      this.drawAtmosphereMessages();
+    }
     
     // Draw game over screen if needed
     if (this.isGameOver) {

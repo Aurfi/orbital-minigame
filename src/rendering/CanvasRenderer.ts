@@ -25,16 +25,31 @@ export class CanvasRenderer {
   private setupCanvas(): void {
     const rect = this.canvas.getBoundingClientRect();
 
-    // Set actual size in memory (scaled for high-DPI)
-    this.canvas.width = rect.width * this.pixelRatio;
-    this.canvas.height = rect.height * this.pixelRatio;
+    // Refresh DPR every time (browser zoom can change it)
+    this.pixelRatio = window.devicePixelRatio || 1;
 
-    // Scale the drawing context so everything draws at the correct size
+    // Set backing store size in device pixels
+    const w = Math.max(1, Math.floor(rect.width * this.pixelRatio));
+    const h = Math.max(1, Math.floor(rect.height * this.pixelRatio));
+    if (this.canvas.width !== w) this.canvas.width = w;
+    if (this.canvas.height !== h) this.canvas.height = h;
+
+    // Reset then scale to avoid compounding on repeated setup
+    this.context.setTransform(1, 0, 0, 1, 0, 0);
     this.context.scale(this.pixelRatio, this.pixelRatio); // device-pixel aware
 
-    // Set CSS size to maintain proper display size
+    // Set CSS size (logical pixels)
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
+  }
+
+  // Detect browser zoom (DPR) changes even when no resize fires
+  private refreshDprIfNeeded(): void {
+    const dpr = window.devicePixelRatio || 1;
+    if (Math.abs(dpr - this.pixelRatio) > 1e-3) {
+      this.pixelRatio = dpr;
+      this.setupCanvas();
+    }
   }
 
   /**
@@ -56,6 +71,8 @@ export class CanvasRenderer {
    * Begin rendering frame
    */
   beginFrame(): void {
+    // Keep canvas backing store in sync with DPR changes
+    this.refreshDprIfNeeded();
     this.context.save();
 
     if (this.camera) {
@@ -218,6 +235,9 @@ export class CanvasRenderer {
     if (scaleX !== 1 || scaleY !== 1) {
       this.context.scale(scaleX, scaleY);
     }
+    // Compensate the world Y-up transform (camera flips Y). Without this,
+    // bitmaps would render upside down compared to vector shapes.
+    this.context.scale(1, -1);
 
     // Draw image centered at the transformed origin
     this.context.drawImage(

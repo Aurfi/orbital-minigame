@@ -12,6 +12,7 @@ export interface GameState {
   rocket: RocketState;
   world: WorldParameters;
   manualZoomControl?: boolean; // User has manually controlled zoom
+  autopilotEnabled?: boolean;  // Auto Pilot mode toggle
 }
 
 export interface RocketState {

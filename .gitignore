@@ -18,10 +18,3 @@ coverage/
 *.pid
 *.seed
 *.tgz
-
-# project docs not for repo
-requirements.md
-ROADMAP.md
-AGENTS.md
-design.md
-docs/

@@ -25,6 +25,14 @@ export class HUDSystem {
     this.initMiniGlobeGeometry();
   }
 
+  // Expose last projected apo/peri data for other systems (e.g., autopilot)
+  getLastProjectedInfo(): { apoAlt: number; periAlt: number } | null {
+    if (this.cachedInfo) {
+      return { apoAlt: this.cachedInfo.apoAlt, periAlt: this.cachedInfo.periAlt };
+    }
+    return null;
+  }
+
   /**
    * Render the HUD overlay with flight data
    */
@@ -181,6 +189,12 @@ export class HUDSystem {
     // Draw mission timer and restart button in top-right corner
     this.drawMissionTimer(ctx, missionTimer || 0);
     this.drawRestartButton(ctx);
+    this.drawAutopilotButton(ctx, gameState);
+
+    // Confirmation overlay for mode switch
+    if ((this as any)._modeConfirm?.pending) {
+      this.drawModeConfirm(ctx, (this as any)._modeConfirm.targetAuto === true);
+    }
 
     // Position indicator removed - was not useful
 
@@ -191,14 +205,15 @@ export class HUDSystem {
     // Mini-planet map in bottom-right corner
     this.drawMiniMap(ctx, gameState);
 
-    // Draw controls help (dynamic size)
+    // Controls/Commands help panel (dynamic size). When in Auto Pilot, show a
+    // short command cheat sheet to hint the console language.
     ctx.font = '12px monospace';
     const lines = [
       'Controls:',
-      'SPACE - Start engine',
-      'T - Full throttle',
-      'G - Zero throttle',
-      'B - Cut engines',
+      'Space - Start Engine',
+      'B - Cut Engine',
+      'T - Full Throttle',
+      'G - Zero Throttle',
       'Up/Down - Throttle ±10%',
       'Left/Right - Turn',
       'S - Stage',
@@ -926,10 +941,10 @@ export class HUDSystem {
    * Draw restart button
    */
   private drawRestartButton(ctx: CanvasRenderingContext2D): void {
-    const buttonX = this.canvas.width - 80;
-    const buttonY = 50;
-    const buttonW = 70;
+    const buttonW = 100;
     const buttonH = 25;
+    const buttonX = this.canvas.width - 110;
+    const buttonY = 50;
     
     // Button background
     ctx.fillStyle = 'rgba(200, 50, 50, 0.8)';
@@ -942,11 +957,87 @@ export class HUDSystem {
     ctx.fillStyle = '#ffffff';
     ctx.font = '12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('RESTART', buttonX + buttonW/2, buttonY + 16);
+    ctx.fillText('MENU', buttonX + buttonW/2, buttonY + 16);
     ctx.textAlign = 'left'; // Reset
     
     // Store button bounds for click detection
     (this as any).restartButtonBounds = { x: buttonX, y: buttonY, width: buttonW, height: buttonH };
+  }
+
+  private drawAutopilotButton(ctx: CanvasRenderingContext2D, gameState: GameState): void {
+    const buttonX = this.canvas.width - 110;
+    const buttonY = 80;
+    const buttonW = 100;
+    const buttonH = 25;
+
+    // Button background
+    ctx.fillStyle = gameState.autopilotEnabled ? 'rgba(50, 140, 200, 0.9)' : 'rgba(50, 120, 180, 0.8)';
+    ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+    ctx.strokeStyle = gameState.autopilotEnabled ? '#7ec8ff' : '#66aaff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(buttonX, buttonY, buttonW, buttonH);
+
+    // Button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    const label = gameState.autopilotEnabled ? 'MANUAL' : 'AUTO PILOT';
+    ctx.fillText(label, buttonX + buttonW/2, buttonY + 16);
+    ctx.textAlign = 'left';
+
+    (this as any).autopilotButtonBounds = { x: buttonX, y: buttonY, width: buttonW, height: buttonH };
+  }
+
+  // Called by GameEngine to set confirmation UI state
+  setModeConfirm(pending: boolean, targetAuto: boolean): void {
+    (this as any)._modeConfirm = { pending, targetAuto };
+  }
+
+  private drawModeConfirm(ctx: CanvasRenderingContext2D, toAuto: boolean): void {
+    // Dim backdrop
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    const panelW = 360;
+    const panelH = 120;
+    const x = (this.canvas.width - panelW) / 2;
+    const y = (this.canvas.height - panelH) / 2;
+    ctx.fillStyle = 'rgba(20,20,30,0.95)';
+    ctx.strokeStyle = '#88aaff';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, panelW, panelH);
+    ctx.strokeRect(x, y, panelW, panelH);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '14px monospace';
+    // Friendly text based on target mode
+    const text = toAuto ? 'Restart into Auto Pilot mode?' : 'Restart into Manual mode?';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, x + panelW / 2, y + 35);
+
+    // Buttons
+    const btnW = 120, btnH = 28;
+    const yesX = x + 40, noX = x + panelW - 40 - btnW;
+    const btnY = y + panelH - 45;
+    ctx.fillStyle = '#2d6a3e';
+    ctx.fillRect(yesX, btnY, btnW, btnH);
+    ctx.strokeStyle = '#55cc77';
+    ctx.strokeRect(yesX, btnY, btnW, btnH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('YES', yesX + btnW / 2, btnY + 19);
+
+    ctx.fillStyle = '#7a2d2d';
+    ctx.strokeStyle = '#ff7777';
+    ctx.fillRect(noX, btnY, btnW, btnH);
+    ctx.strokeRect(noX, btnY, btnW, btnH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('NO', noX + btnW / 2, btnY + 19);
+
+    // Expose bounds for clicks
+    (this as any).confirmYesBounds = { x: yesX, y: btnY, width: btnW, height: btnH };
+    (this as any).confirmNoBounds = { x: noX, y: btnY, width: btnW, height: btnH };
+
+    ctx.textAlign = 'left';
   }
 
   /**
