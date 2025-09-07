@@ -79,24 +79,17 @@ export class GameEngine {
   private showHUD = true;
   
   /**
-   * Safe Vector2 normalize utility to avoid normalize errors
+   * Safe Vector2 normalize utility using Vector2.normalized()
    */
   private safeNormalize(vector: Vector2): Vector2 {
     const magnitude = vector.magnitude();
     if (magnitude < 0.001) {
-      return new Vector2(0, -1); // Default direction
+      return new Vector2(0, -1);
     }
     try {
-      if (typeof vector.normalize === 'function') {
-        return vector.normalize();
-      } else if (typeof vector.normalized === 'function') {
-        return vector.normalized();
-      } else {
-        // Manual normalize
-        return new Vector2(vector.x / magnitude, vector.y / magnitude);
-      }
-    } catch (error) {
-      return new Vector2(0, -1); // Fallback direction
+      return vector.normalized();
+    } catch {
+      return new Vector2(vector.x / magnitude, vector.y / magnitude);
     }
   }
   
@@ -107,7 +100,10 @@ export class GameEngine {
   private hasBurnedUp = false;
   private padBaseAngle: number = Math.PI / 2; // base ground angle for pad/site
   private autopilot?: Autopilot;
-  private apHold: 'none'|'prograde'|'retrograde'|'up' = 'none';
+  private autopilotEnabled: boolean = false;
+  private pendingAutopilotMode: boolean | null = null;
+  private firstIgnitionPlayed: boolean = false;
+  private apHold: 'none'|'prograde'|'retrograde'|'up'|'target' = 'none';
   private apTargetRot: number | null = null;
   private apLogger: ((msg: string)=>void) | null = null; // small log hook for console
 
@@ -1492,13 +1488,15 @@ export class GameEngine {
     if (!ctx) return;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const now = Date.now();
     for (const b of this.factBubbles) {
-      // Slide-in/out offset based on life
+      // Slide-in/out offset based on lifetime seconds
       const inDur = 0.3;
       const outDur = 0.3;
-      const t = b.life;
-      const tIn = Math.min(1, t / inDur);
-      const tOut = Math.max(0, (b.maxLife - t) / outDur);
+      const lifeSec = Math.max(0, (now - b.bornAtMs) / 1000);
+      const maxLifeSec = Math.max(0.001, b.ttlSec);
+      const tIn = Math.min(1, lifeSec / inDur);
+      const tOut = Math.max(0, (maxLifeSec - lifeSec) / outDur);
       const slide = Math.min(tIn, tOut); // 0..1
       const ease = (p: number) => p * p * (3 - 2 * p); // smoothstep
       const slideOffset = (1 - ease(slide)) * 24; // px from right
@@ -1974,12 +1972,7 @@ export class GameEngine {
       stage.age += deltaTime;
       
       // Apply physics to separated stages (gravity, etc.)
-      let stagePosition: Vector2;
-      if (stage.pos instanceof Vector2) {
-        stagePosition = stage.pos;
-      } else {
-        stagePosition = new Vector2(stage.pos.x || 0, stage.pos.y || 0);
-      }
+      const stagePosition: Vector2 = stage.pos;
       
       const gravityMagnitude = this.gameState.world.getGravitationalAcceleration(stagePosition.magnitude());
       
@@ -1993,18 +1986,12 @@ export class GameEngine {
 
       // No extra retro-thruster push; keep motion simple
       
-      // Ensure velocity is a Vector2
-      if (!(stage.vel instanceof Vector2)) {
-        stage.vel = new Vector2(stage.vel.x, stage.vel.y);
-      }
+      // Update velocity
       stage.vel = stage.vel.add(gravityAccel.multiply(deltaTime));
 
       // Gentle drift down along gravity only
       
-      // Ensure position is a Vector2 and update
-      if (!(stage.pos instanceof Vector2)) {
-        stage.pos = new Vector2(stage.pos.x, stage.pos.y);
-      }
+      // Update position is done elsewhere; ensure ground collision after physics
       // Ground collision for separated stages
       const stageAltitude = this.gameState.world.getAltitude(stage.pos.magnitude());
       if (stageAltitude <= 0) {
