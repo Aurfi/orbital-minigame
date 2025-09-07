@@ -245,19 +245,19 @@ export class HUDSystem {
     }
     const pad = 10;
     const lineH = 15 * uiScale;
-    const panelW = Math.ceil(maxW) + pad * 2;
-    const panelH = lineH * lines.length + pad * 2;
-    const panelX = 10;
-    const panelY = this.canvas.height - panelH - 20; // start higher and fit content
+    const helpW = Math.ceil(maxW) + pad * 2;
+    const helpH = lineH * lines.length + pad * 2;
+    const helpX = 10;
+    const helpY0 = this.canvas.height - helpH - 20; // start higher and fit content
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.fillRect(helpX, helpY0, helpW, helpH);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(panelX, panelY, panelW, panelH);
+    ctx.strokeRect(helpX, helpY0, helpW, helpH);
 
     ctx.fillStyle = '#ffffff';
-    let helpY = panelY + pad + 12;
+    let helpY = helpY0 + pad + 12;
     for (const ln of lines) {
       ctx.fillText(ln, panelX + pad, helpY);
       helpY += lineH;
