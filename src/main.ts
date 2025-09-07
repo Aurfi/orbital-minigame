@@ -222,6 +222,9 @@ function setupAutopilotConsole(engine: GameEngine) {
     if (text.trim()) {
       addLog('> run');
       engine.runAutopilotScript(text);
+      // Clear input after running the script for a clean slate
+      input.value = '';
+      input.focus();
     }
   };
   row.appendChild(runBtn);
