@@ -68,9 +68,6 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 - Autopilot: `src/core/Autopilot.ts` parses simple commands and drives the engine through a tiny scheduler.
 - Data: `src/data/` for assets like space facts.
 
-Refactor plan
-- We are gradually extracting systems from `GameEngine.ts` to improve maintainability. The fact bubbles overlay has been moved to `src/ui/FactBubbles.ts`. Next candidates: input handling, sound/sfx bridge, and staging visuals.
-
 ## Contributing
 - Use Docker workflows for dev/test/lint.
 - Format and lint: `docker-compose run --rm game-dev npm run format && npm run lint`.
