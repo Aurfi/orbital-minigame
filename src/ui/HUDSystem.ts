@@ -87,9 +87,9 @@ export class HUDSystem {
     const isMobile = isCoarse || hasTouch;
     let uiScale = 1.0;
     if (isMobile && minDim <= 700) {
-      uiScale = 2.4; // significantly larger on phones
+      uiScale = 1.8; // smaller than before (was 2.4)
     } else if (isMobile && minDim <= 1000) {
-      uiScale = 2.0;
+      uiScale = 1.5;
     } else if (!isMobile && minDim <= 1000) {
       uiScale = 1.15; // small tablets / small windows
     } else if (minDim < 1600) {
@@ -106,12 +106,18 @@ export class HUDSystem {
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
 
-    // Draw background panel - expanded height to fit delta-V and gauge comfortably
-    // Main HUD panel
+    // Layout metrics
     const panelX = 10;
     const panelY = 10;
     const panelW = 300 * uiScale;
-    const panelH = 260 * uiScale;
+    const startY = 30 * uiScale;
+    const lineHeight = 20 * uiScale;
+    const gaugeH = 20 * uiScale;
+    // Estimate needed height: 9 text lines + spacing + gauge
+    const linesCount = 9;
+    const estH = startY + lineHeight * linesCount + 12 * uiScale + gaugeH + 20;
+    const panelH = estH;
+    // Draw background panel sized to content
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(panelX, panelY, panelW, panelH);
     ctx.strokeStyle = '#ffffff';
@@ -120,8 +126,6 @@ export class HUDSystem {
 
     // Draw flight data
     ctx.fillStyle = '#ffffff';
-    const startY = 30 * uiScale;
-    const lineHeight = 20 * uiScale;
     let y = startY;
 
     // Format and display data
@@ -148,13 +152,17 @@ export class HUDSystem {
       else if (ratio > 0.85) { label = 'Unsafe'; safetyColor = '#ff9933'; }
     }
     ctx.fillStyle = safetyColor;
-    // Right-align inside the HUD panel, same line as velocity
+    // Place label next to the velocity text, with a small gap; clamp to panel right
+    const velW = ctx.measureText(velText).width;
+    const gap = 12 * uiScale;
+    let labelX = 20 + velW + gap;
     const rightPad = 10;
-    const rightX = panelX + panelW - rightPad;
+    const maxX = panelX + panelW - rightPad;
+    if (labelX > maxX) labelX = maxX;
     const oldAlign = ctx.textAlign;
-    ctx.textAlign = 'right';
-    ctx.fillText(label, rightX, y);
     ctx.textAlign = 'left';
+    ctx.fillText(label, labelX, y);
+    ctx.textAlign = oldAlign;
     // Reset color so only the safety text is colorized
     ctx.fillStyle = '#ffffff';
     y += lineHeight;
