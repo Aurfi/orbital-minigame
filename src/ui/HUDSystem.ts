@@ -77,16 +77,19 @@ export class HUDSystem {
       currentISP = rocket.stages[rocket.currentStage]?.specificImpulse || 0;
     }
 
-    // UI scale: make mobile much larger, desktops as before
-    const cssW = this.canvas.width;
-    const cssH = this.canvas.height;
+    // UI scale: detect mobile and compute size using CSS pixels (not device pixels)
+    const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
+    const cssW = (this.canvas as HTMLCanvasElement).clientWidth || Math.round(this.canvas.width / dpr);
+    const cssH = (this.canvas as HTMLCanvasElement).clientHeight || Math.round(this.canvas.height / dpr);
     const minDim = Math.min(cssW, cssH);
-    const isMobile = (typeof window !== 'undefined') && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const isCoarse = (typeof window !== 'undefined') && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    const hasTouch = (typeof navigator !== 'undefined') && ((navigator as any).maxTouchPoints > 0);
+    const isMobile = isCoarse || hasTouch;
     let uiScale = 1.0;
     if (isMobile && minDim <= 700) {
-      uiScale = 2.7; // ~2x bigger than earlier mobile HUD
+      uiScale = 2.4; // significantly larger on phones
     } else if (isMobile && minDim <= 1000) {
-      uiScale = 1.8;
+      uiScale = 2.0;
     } else if (!isMobile && minDim <= 1000) {
       uiScale = 1.15; // small tablets / small windows
     } else if (minDim < 1600) {
