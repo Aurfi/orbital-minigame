@@ -1366,6 +1366,8 @@ export class GameEngine {
     // Skip gradient on very small screens (mobile tiny viewports)
     const tooSmall = cssW < 480 || cssH < 380;
     if (tooSmall) return;
+    // Skip gradient completely at high altitude (>= 200 km)
+    if (altitude >= 200_000) return;
 
     // Blend colors based on altitude: near ground = brighter blue, high up = dark space
     const t = Math.max(0, Math.min(1, altitude / 200_000)); // fade by 200 km
