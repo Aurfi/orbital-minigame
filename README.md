@@ -1,10 +1,10 @@
 # Mini Orbital Launch
 
-A small 2D “KSP‑inspired” rocket sandbox made by a KSP fan. Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be educational and a little fun — a weekend challenge that grew legs.
+A small 2D rocket sandbox made by a KSP fan. Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be a little fun.
 
 ## What It Is
-- A simple web toy that shows the feel of orbital flight: throttle, gravity turn, coasting to apoapsis, and circularization.
-- Runs entirely in the browser (no accounts, no servers). Click, fly, repeat.
+- A simple web game that shows the feel of orbital flight: throttle, gravity turn, coasting to apoapsis, and circularization.
+- Runs entirely in the browser. Click, fly.
 
 ## What It Does
 - Quick, readable 2D flight around a small planet
@@ -12,9 +12,8 @@ A small 2D “KSP‑inspired” rocket sandbox made by a KSP fan. Fly a rocket i
 - Built‑in “auto pilot” that follows plain‑English‑style commands
 - Lightweight art and effects (exhaust, heat glow, debris)
 
-## What It’s Not
 - Not a full‑fidelity physics simulator
-- Not a real‑scale solar system
+- Not a real‑scale solar system (Smaller Planet for faster gameplay)
 - Not tied to any backend — all client‑side
 
 ## Quick Start (Docker)
@@ -50,17 +49,12 @@ A small 2D “KSP‑inspired” rocket sandbox made by a KSP fan. Fly a rocket i
 
 Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoapsis hold prograde burn_until apoapsis 110000 throttle 0.6 cut`
 
-## How It Works (Explain Like I’m 12)
+## How It Works
 - Gravity: the planet pulls your rocket toward its center. Close to the ground the pull feels stronger; far away it feels weaker.
 - Engines: when you throttle up and ignite, the rocket gets pushed in the direction it’s pointing. Point sideways to go faster around the planet instead of straight up.
 - Air: low down the air is thick and pushes back hard; high up it’s thin and barely pushes at all. Going fast in thick air makes the rocket heat up.
 - Turning: “hold prograde” points the rocket along its current path; “retrograde” points the other way; “up” points away from the planet.
 - Time steps: the game moves the rocket in tiny steps many times per second, so it looks smooth and feels stable.
-
-## Build & Publish to OVH (Git Pull)
-- GitHub Action builds on `main` and publishes the `dist/` folder to branch `ovh-static`.
-- In OVH Manager → Web Hosting → Git, add your GitHub repo with branch `ovh-static` and deploy to `www/`.
-- If your repo is private, create a read‑only “Deploy Key” in GitHub and paste its public key into OVH. No server needed.
 
 ## Tech (short)
 - TypeScript + Vite, Canvas rendering, compact physics
@@ -68,4 +62,4 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 - Tests: Vitest (jsdom) with coverage; Biome for lint/format
 
 ## License
-MIT
+MIT, If there is anything usefull in here
