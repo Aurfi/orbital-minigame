@@ -1366,7 +1366,7 @@ export class GameEngine {
     // Skip gradient on very small screens (mobile tiny viewports)
     const tooSmall = cssW < 480 || cssH < 380;
     if (tooSmall) return;
-    // Skip gradient completely at high altitude (>= 200 km)
+    // Skip gradient completely at high altitude (>= 200 km) on all viewports
     if (altitude >= 200_000) return;
 
     // Blend colors based on altitude: near ground = brighter blue, high up = dark space
@@ -1375,8 +1375,17 @@ export class GameEngine {
     const top = `rgb(${mix(180, 20, t)}, ${mix(220, 20, t)}, ${mix(255, 35, t)})`;
     const bottom = `rgb(${mix(30, 10, t)}, ${mix(60, 10, t)}, ${mix(120, 35, t)})`;
 
+    // Fade out band between 175–200 km
+    const fadeStart = 175_000;
+    const fadeEnd = 200_000;
+    let fadeAlpha = 1;
+    if (altitude >= fadeStart) {
+      fadeAlpha = Math.max(0, Math.min(1, 1 - (altitude - fadeStart) / (fadeEnd - fadeStart)));
+    }
+
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = fadeAlpha;
     const g = ctx.createLinearGradient(0, 0, 0, hDev);
     g.addColorStop(0, top);
     g.addColorStop(1, bottom);
