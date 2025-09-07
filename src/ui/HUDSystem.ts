@@ -84,7 +84,8 @@ export class HUDSystem {
     let uiScale = 1.0;
     if (minDim <= 700) uiScale = 1.35; // phone
     else if (minDim <= 1000) uiScale = 1.15; // small tablets
-    else if (minDim >= 1300) uiScale = 0.9; // very large screens
+    else if (minDim >= 2000) uiScale = 0.8; // ultra-wide/4k
+    else if (minDim >= 1600) uiScale = 0.85; // very large screens
 
     // HUD styling
     ctx.font = `${Math.round(14 * uiScale)}px monospace`;
@@ -222,7 +223,7 @@ export class HUDSystem {
     this.miniAngle = earthAngle; // base angle
 
     // Mini-planet map in bottom-right corner
-    this.drawMiniMap(ctx, gameState);
+    this.drawMiniMap(ctx, gameState, uiScale);
 
     // Controls/Commands help panel (dynamic size). When in Auto Pilot, show a
     // short command cheat sheet to hint the console language.
@@ -284,9 +285,9 @@ export class HUDSystem {
    * Mini 2D planet view with rocket and projected path
    * Drawn in bottom-right corner as a HUD overlay
    */
-  private drawMiniMap(ctx: CanvasRenderingContext2D, gameState: GameState): void {
-    const margin = 18;
-    const size = 160;
+  private drawMiniMap(ctx: CanvasRenderingContext2D, gameState: GameState, uiScale: number = 1): void {
+    const margin = Math.round(18 * uiScale);
+    const size = Math.max(120, Math.round(160 * uiScale));
     const x = this.canvas.width - size - margin;
     const y = this.canvas.height - size - margin;
 
@@ -294,7 +295,7 @@ export class HUDSystem {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
     ctx.fillRect(x, y, size, size);
     ctx.strokeStyle = '#88aaff';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = Math.max(1, Math.round(1 * uiScale));
     ctx.strokeRect(x, y, size, size);
 
     // Planet disc centered in panel
@@ -302,7 +303,7 @@ export class HUDSystem {
     const cy = y + size / 2;
     const planetRadiusWorld = gameState.world.planetRadius;
     const planetRadiusMini = Math.min(size * 0.24, size * 0.26); // smaller earth on HUD
-    const panelEdgeRadius = size / 2 - 6; // keep a small border inside the panel
+    const panelEdgeRadius = size / 2 - Math.max(4, Math.round(6 * uiScale)); // keep a small border inside the panel
 
     // Planet ocean base
     ctx.beginPath();
@@ -437,7 +438,7 @@ export class HUDSystem {
     if (pathPts.length > 1) {
       const maxDots = 1000; // cap for performance
       const step = Math.max(1, Math.floor(pathPts.length / maxDots));
-      const dotR = 1.1;
+      const dotR = Math.max(1, 1.1 * uiScale);
       ctx.fillStyle = 'rgba(200,220,255,0.9)';
       for (let i = 0; i < pathPts.length; i += step) {
         const p = worldToMini(pathPts[i].x, pathPts[i].y);
@@ -463,9 +464,9 @@ export class HUDSystem {
       }
 
       // Legend above panel (stacked)
-      const apoY = y - 24;
-      const periY = y - 10;
-      ctx.font = '12px monospace';
+      const apoY = y - Math.round(24 * uiScale);
+      const periY = y - Math.round(10 * uiScale);
+      ctx.font = `${Math.round(12 * uiScale)}px monospace`;
       // Apoapsis label (green)
       ctx.fillStyle = '#00ff66';
       const apoLabel = isFinite(info.apoAlt) ? `${(info.apoAlt / 1000).toFixed(0)} km` : '∞ (escape)';
@@ -485,7 +486,7 @@ export class HUDSystem {
     // Rocket marker as a small X
     const rpos = gameState.rocket.position;
     const m = worldToMini(rpos.x, rpos.y);
-    const r = 4;
+    const r = Math.max(3, Math.round(4 * uiScale));
     ctx.strokeStyle = '#ffcc00';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -496,7 +497,7 @@ export class HUDSystem {
     ctx.stroke();
 
     // Label
-    ctx.font = '11px monospace';
+    ctx.font = `${Math.round(11 * uiScale)}px monospace`;
     ctx.fillStyle = '#a8c0ff';
     ctx.fillText('Orbit view', x + 8, y + 14);
   }
