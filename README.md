@@ -1,16 +1,16 @@
 # Mini Orbital Launch
 
-A tiny 2D rocket sandbox you can play in the browser. Build speed, tip over, coast to Ap, and circularize. Simple, fast, a bit cheeky, and surprisingly educational.
+A small 2D “KSP‑inspired” rocket sandbox made by a KSP fan. Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be educational and a little fun — a weekend challenge that grew legs.
 
 ## What It Is
-- A playful orbital‑flight toy that teaches intuition: throttle, gravity turn, coasting to apoapsis, circularization.
-- Single‑page web app — click, fly, repeat. No accounts. No backend.
+- A simple web toy that shows the feel of orbital flight: throttle, gravity turn, coasting to apoapsis, and circularization.
+- Runs entirely in the browser (no accounts, no servers). Click, fly, repeat.
 
 ## What It Does
-- Quick‑feel orbital flight on a “small planet” (fun over perfection)
-- Gravity turn guidance vibe with smooth controls and readable HUD
-- Scriptable autopilot console with friendly commands
-- Simple art with juicy effects (exhaust, heat glow, debris)
+- Quick, readable 2D flight around a small planet
+- Smooth controls and HUD with helpful numbers
+- Built‑in “auto pilot” that follows plain‑English‑style commands
+- Lightweight art and effects (exhaust, heat glow, debris)
 
 ## What It’s Not
 - Not a full‑fidelity physics simulator
@@ -31,22 +31,39 @@ A tiny 2D rocket sandbox you can play in the browser. Build speed, tip over, coa
 - Local static preview (Nginx): `docker-compose up game-prod` → http://localhost:8080
 
 ## Command List
-- `ignite`, `cut`, `throttle 0..1`
-- `pitch east|west <deg>`, `hold prograde`, `hold retrograde`, `hold up`
-- `wait <seconds>`
-- `wait until apoapsis | periapsis | stage empty`
-- `until apoapsis = <m>` or `until periapsis = <m>` (optional `throttle <x>`)
+- Engine:
+  - `ignite` (or `start`, `engine on`), `cut` (or `engine off`, `stop`), `stage`
+  - `throttle <0..1>` — e.g., `throttle 1`, `throttle 0.35`
+- Attitude / Guidance:
+  - `hold prograde | retrograde | up | none`
+  - `pitch east|west <deg>` — e.g., `pitch east 5`
+- Waiting:
+  - `wait <seconds>` — e.g., `wait 2.5`
+  - `wait until apoapsis` | `wait until periapsis`
+  - `wait until altitude <meters>` — e.g., `wait until altitude 50000`
+  - `wait until stage empty` (or `depleted`)
+- Until/Targets (can combine with a throttle):
+  - `until apoapsis [=|>=|<=] <meters> [throttle <0..1>]`
+  - `until periapsis [=|>=|<=] <meters> [throttle <0..1>]`
+  - `until twr <=|>= <number> [throttle <0..1>]`
+  - `burn_until apoapsis <meters> throttle <0..1>`
 
-## How It Works (short)
-- Physics: 2D point‑mass around a small planet. Gravity g = GM/r²; altitude = r − R. Atmosphere uses a simple density curve vs altitude.
-- Forces: Thrust from current stage; drag Fd = ½·ρ·Cd·A·v² opposing velocity; gravity towards center.
-- Integrator: Semi‑implicit Euler at a fixed tick; clamped time step; stable enough for arcade use.
-- Guidance: “Hold prograde/retrograde/up” sets a target angle; a small controller slews the rocket towards the target.
-- Autopilot: A tiny interpreter parses commands like `until apoapsis = 100000 throttle 0.5` and drives throttle/attitude.
-- Rendering: HTML canvas with a camera, sprite/line layers, HUD overlays, and small effects.
+Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoapsis hold prograde burn_until apoapsis 110000 throttle 0.6 cut`
+
+## How It Works (Explain Like I’m 12)
+- Gravity: the planet pulls your rocket toward its center. Close to the ground the pull feels stronger; far away it feels weaker.
+- Engines: when you throttle up and ignite, the rocket gets pushed in the direction it’s pointing. Point sideways to go faster around the planet instead of straight up.
+- Air: low down the air is thick and pushes back hard; high up it’s thin and barely pushes at all. Going fast in thick air makes the rocket heat up.
+- Turning: “hold prograde” points the rocket along its current path; “retrograde” points the other way; “up” points away from the planet.
+- Time steps: the game moves the rocket in tiny steps many times per second, so it looks smooth and feels stable.
+
+## Build & Publish to OVH (Git Pull)
+- GitHub Action builds on `main` and publishes the `dist/` folder to branch `ovh-static`.
+- In OVH Manager → Web Hosting → Git, add your GitHub repo with branch `ovh-static` and deploy to `www/`.
+- If your repo is private, create a read‑only “Deploy Key” in GitHub and paste its public key into OVH. No server needed.
 
 ## Tech (short)
-- TypeScript + Vite, canvas rendering, tiny physics
+- TypeScript + Vite, Canvas rendering, compact physics
 - Path aliases: `@/`, `@/core`, `@/physics`, `@/rendering`, `@/ui`
 - Tests: Vitest (jsdom) with coverage; Biome for lint/format
 
