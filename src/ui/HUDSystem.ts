@@ -77,17 +77,20 @@ export class HUDSystem {
       currentISP = rocket.stages[rocket.currentStage]?.specificImpulse || 0;
     }
 
-    // UI scale: bigger on phones, slightly smaller on very large screens
+    // UI scale: make mobile much larger, desktops as before
     const cssW = this.canvas.width;
     const cssH = this.canvas.height;
     const minDim = Math.min(cssW, cssH);
+    const isMobile = (typeof window !== 'undefined') && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     let uiScale = 1.0;
-    if (minDim <= 700) {
-      uiScale = 1.35; // phone
-    } else if (minDim <= 1000) {
-      uiScale = 1.15; // small tablets
+    if (isMobile && minDim <= 700) {
+      uiScale = 2.7; // ~2x bigger than earlier mobile HUD
+    } else if (isMobile && minDim <= 1000) {
+      uiScale = 1.8;
+    } else if (!isMobile && minDim <= 1000) {
+      uiScale = 1.15; // small tablets / small windows
     } else if (minDim < 1600) {
-      uiScale = 1.0; // explicitly keep 1.0 between 1200 and 1600 (and 1000..1600)
+      uiScale = 1.0; // keep 1.0 between 1200 and 1600
     } else if (minDim < 2000) {
       uiScale = 0.85; // very large screens
     } else {

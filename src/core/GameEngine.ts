@@ -1355,14 +1355,17 @@ export class GameEngine {
    * Draw sky gradient that changes with altitude
    */
   private drawSkyGradient(altitude: number): void {
-    // Screen-space vertical gradient for consistent mobile look
+    // Screen-space vertical gradient; draw in device pixels to avoid DPR issues
     const ctx = (this.renderer as any).context as CanvasRenderingContext2D;
     if (!ctx) return;
-    const w = (this as any).canvas?.width ?? (ctx.canvas.width);
-    const h = (this as any).canvas?.height ?? (ctx.canvas.height);
-    const dpr = (window.devicePixelRatio || 1);
-    const cssW = w / dpr;
-    const cssH = h / dpr;
+    const wDev = ctx.canvas.width;   // device pixels
+    const hDev = ctx.canvas.height;  // device pixels
+    const cssW = ctx.canvas.clientWidth || wDev;
+    const cssH = ctx.canvas.clientHeight || hDev;
+
+    // Skip gradient on very small screens (mobile tiny viewports)
+    const tooSmall = cssW < 480 || cssH < 380;
+    if (tooSmall) return;
 
     // Blend colors based on altitude: near ground = brighter blue, high up = dark space
     const t = Math.max(0, Math.min(1, altitude / 200_000)); // fade by 200 km
@@ -1372,11 +1375,11 @@ export class GameEngine {
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const g = ctx.createLinearGradient(0, 0, 0, cssH);
+    const g = ctx.createLinearGradient(0, 0, 0, hDev);
     g.addColorStop(0, top);
     g.addColorStop(1, bottom);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.fillRect(0, 0, wDev, hDev);
     ctx.restore();
   }
 
@@ -1583,11 +1586,9 @@ export class GameEngine {
       this.shownFacts.add(idx);
       this.saveShownFacts();
 
-      // Spawn bubble pinned towards the left so it doesn't overlap MENU/AUTO PILOT buttons
-      const screenW = this.canvas.width;
-      const panelWidth = 320;
-      const margin = 20;
-      const x = panelWidth / 2 + margin; // left inset
+      // Spawn bubble centered at the top
+      const screenW = this.canvas.width; // device pixels (HUD draws in device px)
+      const x = Math.round(screenW / 2);
       const y = 60; // fixed top height
       const pos = new Vector2(x, y);
       const vel = new Vector2(0, 0); // no drift in screen space
