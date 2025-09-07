@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
-import toIco from 'to-ico';
+import pngToIco from 'png-to-ico';
 
 const root = path.resolve(process.cwd());
 const srcSvg = path.join(root, 'public', 'favicon_source.svg');
@@ -40,7 +40,7 @@ async function build() {
   const pngs = await Promise.all(
     sizes.map((s) => sharp(srcSvg).resize(s, s, { fit: 'contain' }).png().toBuffer())
   );
-  const ico = await toIco(pngs);
+  const ico = await pngToIco(pngs);
   await fs.writeFile(outIco, ico);
 
   console.log('Favicons generated:', outPng, outIco);
@@ -50,4 +50,3 @@ build().catch((err) => {
   console.error('build-icons failed:', err);
   process.exit(1);
 });
-
