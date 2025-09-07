@@ -46,6 +46,15 @@ export class InputController {
   };
 
   private onKeyDown = (event: KeyboardEvent) => {
+    // Don't process game controls if user is typing in an input field
+    const activeElement = document.activeElement;
+    if (
+      activeElement &&
+      (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')
+    ) {
+      return;
+    }
+
     if (this.engine.isAutopilotRunning()) {
       // when script runs, keep controls quiet
       return;
@@ -88,6 +97,15 @@ export class InputController {
   };
 
   private onKeyUp = (event: KeyboardEvent) => {
+    // Don't process game controls if user is typing in an input field
+    const activeElement = document.activeElement;
+    if (
+      activeElement &&
+      (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')
+    ) {
+      return;
+    }
+
     if (this.engine.isAutopilotRunning()) return;
     switch (event.code) {
       case 'ArrowLeft':
