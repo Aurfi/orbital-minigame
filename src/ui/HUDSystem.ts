@@ -77,11 +77,14 @@ export class HUDSystem {
       currentISP = rocket.stages[rocket.currentStage]?.specificImpulse || 0;
     }
 
-    // UI scale for small screens (mobile)
+    // UI scale: bigger on phones, slightly smaller on very large screens
     const cssW = this.canvas.width;
     const cssH = this.canvas.height;
     const minDim = Math.min(cssW, cssH);
-    const uiScale = minDim <= 700 ? 1.35 : minDim <= 1000 ? 1.15 : 1.0;
+    let uiScale = 1.0;
+    if (minDim <= 700) uiScale = 1.35; // phone
+    else if (minDim <= 1000) uiScale = 1.15; // small tablets
+    else if (minDim >= 1300) uiScale = 0.9; // very large screens
 
     // HUD styling
     ctx.font = `${Math.round(14 * uiScale)}px monospace`;
@@ -90,11 +93,16 @@ export class HUDSystem {
     ctx.lineWidth = 3;
 
     // Draw background panel - expanded height to fit delta-V and gauge comfortably
+    // Main HUD panel
+    const panelX = 10;
+    const panelY = 10;
+    const panelW = 300 * uiScale;
+    const panelH = 260 * uiScale;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 300 * uiScale, 260 * uiScale);
+    ctx.fillRect(panelX, panelY, panelW, panelH);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(10, 10, 300 * uiScale, 260 * uiScale);
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
 
     // Draw flight data
     ctx.fillStyle = '#ffffff';
@@ -126,9 +134,14 @@ export class HUDSystem {
       else if (ratio > 0.85) { label = 'Unsafe'; safetyColor = '#ff9933'; }
     }
     ctx.fillStyle = safetyColor;
-    // Place indicator near the right side of the panel on the same line
-    ctx.fillText(label, 210, y);
-    // Reset color so only the 'Safe' text is colorized
+    // Right-align inside the HUD panel, same line as velocity
+    const rightPad = 10;
+    const rightX = panelX + panelW - rightPad;
+    const oldAlign = ctx.textAlign;
+    ctx.textAlign = 'right';
+    ctx.fillText(label, rightX, y);
+    ctx.textAlign = 'left';
+    // Reset color so only the safety text is colorized
     ctx.fillStyle = '#ffffff';
     y += lineHeight;
     ctx.fillText(`Mass:       ${this.formatNumber(mass, 0)} kg`, 20, y);
@@ -950,8 +963,8 @@ export class HUDSystem {
    * Draw restart button
    */
   private drawRestartButton(ctx: CanvasRenderingContext2D, uiScale: number = 1): void {
-    const buttonW = 120 * uiScale;
-    const buttonH = 32 * uiScale;
+    const buttonW = 140 * uiScale;
+    const buttonH = 36 * uiScale;
     const gap = 10;
     const buttonX = this.canvas.width - (buttonW + gap);
     const buttonY = Math.round(50 * uiScale);
@@ -967,7 +980,7 @@ export class HUDSystem {
     ctx.fillStyle = '#ffffff';
     ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.textAlign = 'center';
-    ctx.fillText('MENU', buttonX + buttonW/2, buttonY + Math.round(20 * uiScale));
+    ctx.fillText('MENU', buttonX + buttonW/2, buttonY + Math.round(22 * uiScale));
     ctx.textAlign = 'left'; // Reset
     
     // Store button bounds for click detection
