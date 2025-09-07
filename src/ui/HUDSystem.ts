@@ -77,23 +77,29 @@ export class HUDSystem {
       currentISP = rocket.stages[rocket.currentStage]?.specificImpulse || 0;
     }
 
+    // UI scale for small screens (mobile)
+    const cssW = this.canvas.width;
+    const cssH = this.canvas.height;
+    const minDim = Math.min(cssW, cssH);
+    const uiScale = minDim <= 700 ? 1.35 : minDim <= 1000 ? 1.15 : 1.0;
+
     // HUD styling
-    ctx.font = '14px monospace';
+    ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 3;
 
     // Draw background panel - expanded height to fit delta-V and gauge comfortably
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 300, 260);
+    ctx.fillRect(10, 10, 300 * uiScale, 260 * uiScale);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(10, 10, 300, 260);
+    ctx.strokeRect(10, 10, 300 * uiScale, 260 * uiScale);
 
     // Draw flight data
     ctx.fillStyle = '#ffffff';
-    const startY = 30;
-    const lineHeight = 20;
+    const startY = 30 * uiScale;
+    const lineHeight = 20 * uiScale;
     let y = startY;
 
     // Format and display data
@@ -183,13 +189,13 @@ export class HUDSystem {
     ctx.fillText(`Delta-V:   ${dvText}`, 20, y);
 
     // Draw fuel gauge
-    y += lineHeight + 12; // add full line spacing before gauge
-    this.drawFuelGauge(ctx, 20, y, fuel, rocket, gameState);
+    y += lineHeight + 12 * uiScale; // add full line spacing before gauge
+    this.drawFuelGauge(ctx, 20, y, fuel, rocket, gameState, uiScale);
 
     // Draw mission timer and restart button in top-right corner
-    this.drawMissionTimer(ctx, missionTimer || 0);
-    this.drawRestartButton(ctx);
-    this.drawAutopilotButton(ctx, gameState);
+    this.drawMissionTimer(ctx, missionTimer || 0, uiScale);
+    this.drawRestartButton(ctx, uiScale);
+    this.drawAutopilotButton(ctx, gameState, uiScale);
 
     // Confirmation overlay for mode switch
     if ((this as any)._modeConfirm?.pending) {
@@ -207,7 +213,7 @@ export class HUDSystem {
 
     // Controls/Commands help panel (dynamic size). When in Auto Pilot, show a
     // short command cheat sheet to hint the console language.
-    ctx.font = '12px monospace';
+    ctx.font = `${Math.round(12 * uiScale)}px monospace`;
     const lines = [
       'Controls:',
       'Space - Start Engine',
@@ -225,7 +231,7 @@ export class HUDSystem {
       if (w > maxW) maxW = w;
     }
     const pad = 10;
-    const lineH = 15;
+    const lineH = 15 * uiScale;
     const panelW = Math.ceil(maxW) + pad * 2;
     const panelH = lineH * lines.length + pad * 2;
     const panelX = 10;
@@ -865,7 +871,7 @@ export class HUDSystem {
   /**
    * Draw fuel gauge for current stage
    */
-  private drawFuelGauge(ctx: CanvasRenderingContext2D, x: number, y: number, totalFuel: number, rocket: any, gameState: GameState): void {
+  private drawFuelGauge(ctx: CanvasRenderingContext2D, x: number, y: number, totalFuel: number, rocket: any, gameState: GameState, uiScale: number = 1): void {
     const currentStage = rocket.stages[rocket.currentStage];
     if (!currentStage) return;
 
@@ -874,12 +880,12 @@ export class HUDSystem {
     const fuelRatio = Math.min(1, Math.max(0, currentFuel / maxFuel));
 
     // Gauge dimensions
-    const gaugeWidth = 200;
-    const gaugeHeight = 20;
+    const gaugeWidth = 200 * uiScale;
+    const gaugeHeight = 20 * uiScale;
 
     // Label
     ctx.fillStyle = '#ffffff';
-    ctx.font = '14px monospace';
+    ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.fillText(`Fuel: ${this.formatNumber(currentFuel, 0)}/${this.formatNumber(maxFuel, 0)} kg`, x, y - 5);
 
     // Gauge background
@@ -906,45 +912,49 @@ export class HUDSystem {
 
     // Percentage text
     ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
+    ctx.font = `${Math.round(12 * uiScale)}px monospace`;
     const percentText = `${Math.round(fuelRatio * 100)}%`;
     const textWidth = ctx.measureText(percentText).width;
-    ctx.fillText(percentText, x + gaugeWidth / 2 - textWidth / 2, y + 14);
+    ctx.fillText(percentText, x + gaugeWidth / 2 - textWidth / 2, y + Math.round(14 * uiScale));
   }
 
   /**
    * Draw mission timer
    */
-  private drawMissionTimer(ctx: CanvasRenderingContext2D, missionTime: number): void {
+  private drawMissionTimer(ctx: CanvasRenderingContext2D, missionTime: number, uiScale: number = 1): void {
     const minutes = Math.floor(missionTime / 60);
     const seconds = Math.floor(missionTime % 60);
     const timeText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     
     // Timer background
-    const timerX = this.canvas.width - 150;
-    const timerY = 10;
+    const timerW = 140 * uiScale;
+    const timerH = 30 * uiScale;
+    const margin = 10;
+    const timerX = this.canvas.width - (timerW + margin);
+    const timerY = margin;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(timerX, timerY, 140, 30);
+    ctx.fillRect(timerX, timerY, timerW, timerH);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(timerX, timerY, 140, 30);
+    ctx.strokeRect(timerX, timerY, timerW, timerH);
     
     // Timer text
     ctx.fillStyle = '#ffffff';
-    ctx.font = '14px monospace';
+    ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.textAlign = 'center';
-    ctx.fillText(`Mission: ${timeText}`, timerX + 70, timerY + 20);
+    ctx.fillText(`Mission: ${timeText}`, timerX + timerW / 2, timerY + Math.round(20 * uiScale));
     ctx.textAlign = 'left'; // Reset
   }
 
   /**
    * Draw restart button
    */
-  private drawRestartButton(ctx: CanvasRenderingContext2D): void {
-    const buttonW = 100;
-    const buttonH = 25;
-    const buttonX = this.canvas.width - 110;
-    const buttonY = 50;
+  private drawRestartButton(ctx: CanvasRenderingContext2D, uiScale: number = 1): void {
+    const buttonW = 120 * uiScale;
+    const buttonH = 32 * uiScale;
+    const gap = 10;
+    const buttonX = this.canvas.width - (buttonW + gap);
+    const buttonY = Math.round(50 * uiScale);
     
     // Button background
     ctx.fillStyle = 'rgba(200, 50, 50, 0.8)';
@@ -955,20 +965,21 @@ export class HUDSystem {
     
     // Button text
     ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
+    ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.textAlign = 'center';
-    ctx.fillText('MENU', buttonX + buttonW/2, buttonY + 16);
+    ctx.fillText('MENU', buttonX + buttonW/2, buttonY + Math.round(20 * uiScale));
     ctx.textAlign = 'left'; // Reset
     
     // Store button bounds for click detection
     (this as any).restartButtonBounds = { x: buttonX, y: buttonY, width: buttonW, height: buttonH };
   }
 
-  private drawAutopilotButton(ctx: CanvasRenderingContext2D, gameState: GameState): void {
-    const buttonX = this.canvas.width - 110;
-    const buttonY = 80;
-    const buttonW = 100;
-    const buttonH = 25;
+  private drawAutopilotButton(ctx: CanvasRenderingContext2D, gameState: GameState, uiScale: number = 1): void {
+    const gap = 10;
+    const buttonW = 140 * uiScale;
+    const buttonH = 36 * uiScale;
+    const buttonX = this.canvas.width - (buttonW + gap);
+    const buttonY = Math.round(90 * uiScale);
 
     // Button background
     ctx.fillStyle = gameState.autopilotEnabled ? 'rgba(50, 140, 200, 0.9)' : 'rgba(50, 120, 180, 0.8)';
@@ -979,10 +990,10 @@ export class HUDSystem {
 
     // Button text
     ctx.fillStyle = '#ffffff';
-    ctx.font = '12px monospace';
+    ctx.font = `${Math.round(14 * uiScale)}px monospace`;
     ctx.textAlign = 'center';
     const label = gameState.autopilotEnabled ? 'MANUAL' : 'AUTO PILOT';
-    ctx.fillText(label, buttonX + buttonW/2, buttonY + 16);
+    ctx.fillText(label, buttonX + buttonW/2, buttonY + Math.round(22 * uiScale));
     ctx.textAlign = 'left';
 
     (this as any).autopilotButtonBounds = { x: buttonX, y: buttonY, width: buttonW, height: buttonH };

@@ -1355,32 +1355,29 @@ export class GameEngine {
    * Draw sky gradient that changes with altitude
    */
   private drawSkyGradient(altitude: number): void {
-    // Radial gradient centered at planet, simulating atmospheric scattering
-    const planetCenter = Vector2.zero();
-    const planetRadius = this.gameState.world.planetRadius;
-    const atmoThickness = 100_000; // nominal atmosphere
-    const glowBleed = 250_000;     // extend faint glow beyond atmosphere
+    // Screen-space vertical gradient for consistent mobile look
+    const ctx = (this.renderer as any).context as CanvasRenderingContext2D;
+    if (!ctx) return;
+    const w = (this as any).canvas?.width ?? (ctx.canvas.width);
+    const h = (this as any).canvas?.height ?? (ctx.canvas.height);
+    const dpr = (window.devicePixelRatio || 1);
+    const cssW = w / dpr;
+    const cssH = h / dpr;
 
-    // Smooth fade: keep a subtle glow even well outside the atmosphere
-    const smoothstep = (a: number, b: number, x: number) => {
-      const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-      return t * t * (3 - 2 * t);
-    };
+    // Blend colors based on altitude: near ground = brighter blue, high up = dark space
+    const t = Math.max(0, Math.min(1, altitude / 200_000)); // fade by 200 km
+    const mix = (a: number, b: number, k: number) => Math.round(a + (b - a) * k);
+    const top = `rgb(${mix(180, 20, t)}, ${mix(220, 20, t)}, ${mix(255, 35, t)})`;
+    const bottom = `rgb(${mix(30, 10, t)}, ${mix(60, 10, t)}, ${mix(120, 35, t)})`;
 
-    // t = 1 near ground, smoothly down to 0 by glowBleed altitude
-    const t = 1 - smoothstep(0, glowBleed, altitude);
-    const alpha = 0.05 + 0.75 * t; // 0.05 far space .. 0.8 near ground
-    const inner = `rgba(135, 206, 235, ${alpha.toFixed(3)})`; // light blue
-    const outer = '#0F0F23'; // deep space blue
-
-    // Paint the radial gradient in screen space (extend to glowBleed)
-    this.renderer.fillRadialGradientWorld(
-      planetCenter,
-      planetRadius,
-      planetRadius + glowBleed,
-      inner,
-      outer
-    );
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const g = ctx.createLinearGradient(0, 0, 0, cssH);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cssW, cssH);
+    ctx.restore();
   }
 
   /**
