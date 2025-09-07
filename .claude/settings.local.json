@@ -1,9 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Read(//media/oursmalin/**)",
-      "Bash(git add:*)"
-    ],
+    "allow": ["Read(//media/oursmalin/**)", "Bash(git add:*)"],
     "deny": [],
     "ask": []
   }
