@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies in a separate layer (cached unless package.json changes)
-RUN npm install && \
+RUN npm ci && \
     npm cache clean --force
 
 # Create non-root user for security

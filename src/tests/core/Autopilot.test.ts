@@ -1,33 +1,64 @@
-import { describe, it, expect, vi } from 'vitest';
-import { Autopilot } from '@/core/Autopilot';
+import { Autopilot, type AutopilotEnginePort } from '@/core/Autopilot';
+import { describe, expect, it, vi } from 'vitest';
 
-class FakeEngine {
+class FakeEngine implements AutopilotEnginePort {
   public throttle = 0;
   public holds: string[] = [];
   public commands: string[] = [];
   private apo = 0;
 
-  setThrottle(v: number) { this.throttle = v; this.commands.push(`throttle:${v}`); }
-  igniteEngines() { this.commands.push('ignite'); }
-  cutEngines() { this.commands.push('cut'); }
-  setAutopilotHold(mode: any) { this.holds.push(mode); this.commands.push(`hold:${mode}`); }
-  setAutopilotTargetAngle(_deg: number) { this.commands.push('pitch'); }
-  isEngineOn() { return this.throttle > 0; }
-  getCurrentTWR() { return 1.5; }
-  getRadialVelocity() { return -1; }
-  getAltitude() { return 50000; }
-  getActiveStageFuel() { return 0; }
+  setThrottle(v: number) {
+    this.throttle = v;
+    this.commands.push(`throttle:${v}`);
+  }
+  igniteEngines() {
+    this.commands.push('ignite');
+  }
+  cutEngines() {
+    this.commands.push('cut');
+  }
+  performStaging(): void {
+    this.commands.push('stage');
+  }
+  setAutopilotHold(mode: 'none' | 'prograde' | 'retrograde' | 'up') {
+    this.holds.push(mode);
+    this.commands.push(`hold:${mode}`);
+  }
+  setAutopilotTargetAngle(_deg: number) {
+    this.commands.push('pitch');
+  }
+  isEngineOn() {
+    return this.throttle > 0;
+  }
+  getCurrentTWR() {
+    return 1.5;
+  }
+  getRadialVelocity() {
+    return -1;
+  }
+  getAltitude() {
+    return 50000;
+  }
+  getActiveStageFuel() {
+    return 0;
+  }
   setGameSpeed(_s: number) {}
-  getApoapsisAltitude() { return this.apo; }
-  getPeriapsisAltitude() { return 100000; }
+  getApoapsisAltitude() {
+    return this.apo;
+  }
+  getPeriapsisAltitude() {
+    return 100000;
+  }
   // test helper
-  bumpApo(val: number) { this.apo = val; }
+  bumpApo(val: number) {
+    this.apo = val;
+  }
 }
 
 describe('Autopilot parsing and steps', () => {
   it('parses basic throttle/ignite/cut commands', () => {
     const eng = new FakeEngine();
-    const ap = new Autopilot(eng as any);
+    const ap = new Autopilot(eng);
     const logger = vi.fn();
     ap.setLogger(logger);
     ap.runCommand('ignite throttle 0.5 cut');
@@ -39,7 +70,7 @@ describe('Autopilot parsing and steps', () => {
 
   it('supports pitch and hold modes', () => {
     const eng = new FakeEngine();
-    const ap = new Autopilot(eng as any);
+    const ap = new Autopilot(eng);
     ap.runCommand('hold prograde pitch east 5');
     ap.update(0.016);
     ap.update(0.016);
@@ -49,7 +80,7 @@ describe('Autopilot parsing and steps', () => {
 
   it('runs until apoapsis target then cuts throttle', () => {
     const eng = new FakeEngine();
-    const ap = new Autopilot(eng as any);
+    const ap = new Autopilot(eng);
     ap.runCommand('ignite throttle 1 until apoapsis = 100000 throttle 0');
     // Simulate apoapsis growing over updates
     for (let t = 0; t < 200; t++) {

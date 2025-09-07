@@ -1,6 +1,7 @@
-import { Vector2 } from '@/physics/Vector2';
 import spaceFacts from '@/data/space_facts.json';
+import { Vector2 } from '@/physics/Vector2';
 
+// small shape kept simple for readability
 type Bubble = {
   text: string;
   pos: Vector2;
@@ -22,31 +23,41 @@ export class FactBubblesSystem {
   }
 
   update(nowMs: number, altitude: number): void {
+    // do not spam on very small screens / phones
     // Hide facts on phones or narrow viewports
     const dpr = (typeof window !== 'undefined' && (window.devicePixelRatio || 1)) || 1;
-    const cssW = (this.canvas as HTMLCanvasElement).clientWidth || Math.round(this.canvas.width / dpr);
-    const isCoarse = (typeof window !== 'undefined') && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    const cssW =
+      (this.canvas as HTMLCanvasElement).clientWidth || Math.round(this.canvas.width / dpr);
+    const isCoarse =
+      typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
     if (isCoarse || cssW < 1000) return;
 
-    // Only above 5 km
+    // show starting from ~5 km. lower altitude felt noisy
     if (altitude < 5_000) return;
 
     // Spawn at interval
     if ((nowMs - this.lastSpawnMs) / 1000 >= this.nextIntervalSec) {
       const idx = this.pickNextFactIndex();
       if (idx !== null) {
+        // keep track to avoid repeating same text
         const text = (spaceFacts as unknown as string[])[idx];
         this.shownFacts.add(idx);
         this.saveShownFacts();
-        const x = Math.round(this.canvas.width / 2);
+        const x = Math.round(this.canvas.width / 2); // centered on top
         const y = 60; // top center
-        this.bubbles.push({ text, pos: new Vector2(x, y), bornAtMs: nowMs, ttlSec: 12 + Math.random() * 4, opacity: 0 });
+        this.bubbles.push({
+          text,
+          pos: new Vector2(x, y),
+          bornAtMs: nowMs,
+          ttlSec: 12 + Math.random() * 4,
+          opacity: 0,
+        });
         this.lastSpawnMs = nowMs;
         this.nextIntervalSec = 20 + Math.random() * 25;
       }
     }
 
-    // Update lifetimes/opacities
+    // lifetimes and simple fade in/out
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
       const age = (nowMs - b.bornAtMs) / 1000;
@@ -77,7 +88,7 @@ export class FactBubblesSystem {
       ctx.fillRect(x, y, panelW, panelH);
       ctx.strokeRect(x, y, panelW, panelH);
 
-      // Text
+      // multiline text with small padding
       ctx.globalAlpha = b.opacity;
       ctx.fillStyle = '#e6ecff';
       ctx.font = '13px monospace';
@@ -87,9 +98,12 @@ export class FactBubblesSystem {
       const maxW = panelW - pad * 2;
       const lines = this.wrap(ctx, b.text, maxW);
       let ty = y + pad;
-      for (const ln of lines) { ctx.fillText(ln, x + pad, ty); ty += 16; }
+      for (const ln of lines) {
+        ctx.fillText(ln, x + pad, ty);
+        ty += 16;
+      }
 
-      // Progress bar
+      // small progress bar (time before it goes away)
       const age = (Date.now() - b.bornAtMs) / 1000;
       const t = Math.max(0, Math.min(1, age / b.ttlSec));
       const barW = panelW - pad * 2;
@@ -109,16 +123,18 @@ export class FactBubblesSystem {
     const lines: string[] = [];
     let line = '';
     for (const w of words) {
-      const test = line ? line + ' ' + w : w;
-      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
-      else line = test;
+      const test = line ? `${line} ${w}` : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        lines.push(line);
+        line = w;
+      } else line = test;
     }
     if (line) lines.push(line);
     return lines;
   }
 
   private pickNextFactIndex(): number | null {
-    const factsArr: string[] = (spaceFacts as unknown as string[]);
+    const factsArr: string[] = spaceFacts as unknown as string[];
     const available: number[] = [];
     for (let i = 0; i < factsArr.length; i++) {
       if (!this.shownFacts.has(i)) available.push(i);
@@ -134,7 +150,8 @@ export class FactBubblesSystem {
     } catch {}
   }
   private saveShownFacts(): void {
-    try { localStorage.setItem('shownFacts', JSON.stringify([...this.shownFacts])); } catch {}
+    try {
+      localStorage.setItem('shownFacts', JSON.stringify([...this.shownFacts]));
+    } catch {}
   }
 }
-

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
 import { Vector2 } from '@/physics/Vector2';
+import { describe, expect, it } from 'vitest';
 
 describe('Vector2', () => {
   it('adds, subtracts, multiplies, divides', () => {
@@ -35,4 +35,3 @@ describe('Vector2', () => {
     expect(a.equals(new Vector2(1.0001, 1))).toBe(false);
   });
 });
-

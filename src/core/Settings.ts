@@ -11,6 +11,7 @@ export function isSoundEnabled(): boolean {
 }
 
 export function setSoundEnabled(on: boolean): void {
-  try { localStorage.setItem(KEY_SOUND, on ? '1' : '0'); } catch {}
+  try {
+    localStorage.setItem(KEY_SOUND, on ? '1' : '0');
+  } catch {}
 }
-

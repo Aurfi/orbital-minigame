@@ -1,0 +1,10 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running Biome lint..."
+npx biome check . || exit 1
+
+# Uncomment to run tests before committing (may be slow)
+# echo "Running unit tests..."
+# npx vitest --run || exit 1
+

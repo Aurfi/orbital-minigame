@@ -82,6 +82,9 @@ export class CanvasRenderer {
 
       this.context.translate(centerX, centerY);
       this.context.scale(this.camera.zoom, -this.camera.zoom); // Flip Y axis
+      // Rotate world so that local "+Y" (up from planet) stays at screen top when requested
+      const rot = this.camera.rotation || 0;
+      if (rot !== 0) this.context.rotate(-rot);
       this.context.translate(-this.camera.position.x, -this.camera.position.y);
     }
   }
@@ -106,7 +109,7 @@ export class CanvasRenderer {
     radius: number,
     fillColor?: string,
     strokeColor?: string,
-    lineWidth: number = 1
+    lineWidth = 1
   ): void {
     this.context.beginPath();
     this.context.arc(center.x, center.y, radius, 0, 2 * Math.PI);
@@ -138,7 +141,7 @@ export class CanvasRenderer {
     height: number,
     fillColor?: string,
     strokeColor?: string,
-    lineWidth: number = 1
+    lineWidth = 1
   ): void {
     if (fillColor) {
       this.context.fillStyle = fillColor;
@@ -159,7 +162,7 @@ export class CanvasRenderer {
    * @param color Line color
    * @param lineWidth Line width
    */
-  drawLine(start: Vector2, end: Vector2, color: string, lineWidth: number = 1): void {
+  drawLine(start: Vector2, end: Vector2, color: string, lineWidth = 1): void {
     this.context.beginPath();
     this.context.moveTo(start.x, start.y);
     this.context.lineTo(end.x, end.y);
@@ -179,8 +182,8 @@ export class CanvasRenderer {
   drawText(
     text: string,
     position: Vector2,
-    color: string = '#ffffff',
-    font: string = '16px monospace',
+    color = '#ffffff',
+    font = '16px monospace',
     align: CanvasTextAlign = 'left'
   ): void {
     this.context.fillStyle = color;
@@ -218,15 +221,19 @@ export class CanvasRenderer {
     position: Vector2,
     width?: number,
     height?: number,
-    rotation: number = 0,
-    scaleX: number = 1,
-    scaleY: number = 1
+    rotation = 0,
+    scaleX = 1,
+    scaleY = 1
   ): void {
     const drawWidth = width ?? image.width;
     const drawHeight = height ?? image.height;
 
     this.context.save();
-    
+
+    // Enable high-quality image smoothing for better appearance when zoomed
+    this.context.imageSmoothingEnabled = true;
+    this.context.imageSmoothingQuality = 'high';
+
     // Move to position and apply transformations
     this.context.translate(position.x, position.y);
     if (rotation !== 0) {
@@ -240,13 +247,7 @@ export class CanvasRenderer {
     this.context.scale(1, -1);
 
     // Draw image centered at the transformed origin
-    this.context.drawImage(
-      image,
-      -drawWidth / 2,
-      -drawHeight / 2,
-      drawWidth,
-      drawHeight
-    );
+    this.context.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
     this.context.restore();
   }
@@ -289,7 +290,14 @@ export class CanvasRenderer {
     ctx.save();
     // Draw in screen space
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const grad = ctx.createRadialGradient(centerScreen.x, centerScreen.y, r0, centerScreen.x, centerScreen.y, r1);
+    const grad = ctx.createRadialGradient(
+      centerScreen.x,
+      centerScreen.y,
+      r0,
+      centerScreen.x,
+      centerScreen.y,
+      r1
+    );
     grad.addColorStop(0, innerColor);
     grad.addColorStop(1, outerColor);
     ctx.fillStyle = grad;
@@ -331,6 +339,13 @@ export class CanvasRenderer {
   getSize(): Vector2 {
     return new Vector2(this.canvas.width / this.pixelRatio, this.canvas.height / this.pixelRatio);
   }
+
+  /**
+   * Access the underlying 2D context (screen space)
+   */
+  getContext2D(): CanvasRenderingContext2D {
+    return this.context;
+  }
 }
 
 // Camera class for view management
@@ -338,11 +353,12 @@ export class Camera {
   public position: Vector2;
   public zoom: number;
   public target: Vector2 | null = null;
+  public rotation = 0; // radians; positive rotates world counter‑clockwise
 
-  private followSpeed: number = 2.0;
-  private zoomSpeed: number = 1.0;
+  private followSpeed = 2.0;
+  private zoomSpeed = 1.0;
 
-  constructor(position: Vector2 = Vector2.zero(), zoom: number = 1.0) {
+  constructor(position: Vector2 = Vector2.zero(), zoom = 1.0) {
     this.position = position.clone();
     this.zoom = zoom;
   }
@@ -378,7 +394,7 @@ export class Camera {
    * @param zoom New zoom level
    */
   setZoom(zoom: number): void {
-    this.zoom = Math.max(0.001, Math.min(100, zoom));
+    this.zoom = Math.max(0.0007, Math.min(2.0, zoom));
   }
 
   /**
@@ -395,5 +411,10 @@ export class Camera {
    */
   setPosition(position: Vector2): void {
     this.position = position.clone();
+  }
+
+  /** Set camera rotation (radians) */
+  setRotation(radians: number): void {
+    this.rotation = radians;
   }
 }

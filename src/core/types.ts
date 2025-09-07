@@ -1,6 +1,6 @@
 // Core type definitions
 import { Vector2 } from '../physics/Vector2.js';
-import { WorldParameters } from '../physics/WorldParameters.js';
+import type { WorldParameters } from '../physics/WorldParameters.js';
 
 export { Vector2 };
 
@@ -12,7 +12,8 @@ export interface GameState {
   rocket: RocketState;
   world: WorldParameters;
   manualZoomControl?: boolean; // User has manually controlled zoom
-  autopilotEnabled?: boolean;  // Auto Pilot mode toggle
+  autopilotEnabled?: boolean; // Auto Pilot mode toggle
+  autopilotRunning?: boolean; // Script running and inputs locked
 }
 
 export interface RocketState {
@@ -21,7 +22,7 @@ export interface RocketState {
   rotation: number;
   visualRotation?: number; // Smoothed rotation for rendering only
   engineWorldPos?: Vector2; // World coordinates of engine exit
-  engineDownDir?: Vector2;  // Direction pointing out of the engine (away from rocket)
+  engineDownDir?: Vector2; // Direction pointing out of the engine (away from rocket)
   mass: number;
   fuel: number;
   throttle: number;
@@ -33,7 +34,7 @@ export interface RocketState {
   stages: StageConfiguration[];
   exhaustY?: number; // Y position of exhaust from active stage
   exhaustLength?: number; // Current exhaust plume length (px in local units)
-  exhaustWidth?: number;  // Current exhaust plume width
+  exhaustWidth?: number; // Current exhaust plume width
   dragCoefficient?: number;
   crossSectionalArea?: number;
 }
@@ -42,14 +43,13 @@ export interface StageConfiguration {
   name: string;
   thrust: number; // Maximum thrust (N)
   specificImpulse: number; // Specific impulse (s) – fallback/default
-  seaLevelIsp?: number;    // Optional: Isp at sea level (s)
-  vacuumIsp?: number;      // Optional: Isp in vacuum (s)
+  seaLevelIsp?: number; // Optional: Isp at sea level (s)
+  vacuumIsp?: number; // Optional: Isp in vacuum (s)
   propellantMass: number; // Initial propellant mass (kg)
   dryMass: number; // Dry mass without fuel (kg)
   isActive: boolean; // Currently active stage
   fuelRemaining: number; // Current fuel remaining (kg)
 }
-
 
 export interface CommandAPI {
   ignite(): boolean;

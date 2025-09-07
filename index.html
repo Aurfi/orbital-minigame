@@ -19,7 +19,7 @@
         body {
             margin: 0;
             /* Less space at the top, a bit more at the bottom so the console fits */
-            padding: 16px 20px 32px; /* small top space, more bottom space */
+            padding: 16px 20px 26px; /* trim bottom padding to give console more room */
             background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
             font-family: 'Courier New', monospace;
             min-height: 100vh;
@@ -33,7 +33,7 @@
             background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
             border-radius: 20px;
             /* Tighter at the top, a touch more at the bottom */
-            padding: 12px 20px 24px;
+            padding: 12px 20px 14px; /* reduce bottom padding to raise content */
             box-shadow: 
                 0 20px 40px rgba(0, 0, 0, 0.5),
                 inset 0 1px 0 rgba(255, 255, 255, 0.1),
@@ -52,7 +52,7 @@
             top: 15px;
             left: 15px;
             right: 15px;
-            bottom: 15px;
+            bottom: 10px; /* reduce inner bottom gap */
             border: 2px solid #555;
             border-radius: 15px;
             pointer-events: none;
@@ -125,16 +125,13 @@
             border-radius: 8px;
             border: 1px solid #444;
             /* Reserve enough space for the console */
-            flex: 0 0 260px; /* base height */
-            min-height: 200px;
+            flex: 0 0 300px; /* slightly taller console area */
+            min-height: 240px;
             overflow: hidden;
         }
         
-        .speed-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        .toolbar-row { position: relative; min-height: 30px; }
+        .speed-controls { display: inline-flex; align-items: center; gap: 10px; }
         
         .control-label {
             color: #ccc;
@@ -212,7 +209,7 @@
         .page-footer {
             width: 100%;
             text-align: center;
-            padding: 8px 0 12px;
+            padding: 4px 0 6px; /* smaller footer padding for more console space */
             color: #a8afbd;
             font-family: 'Courier New', monospace;
             font-size: 12px;
@@ -228,12 +225,14 @@
             <canvas id="gameCanvas"></canvas>
         </div>
         <div class="control-panel">
-            <div class="speed-controls">
+            <div class="toolbar-row">
+              <div class="speed-controls">
                 <span class="control-label">Game Speed:</span>
                 <button class="speed-btn active" data-speed="1">1x</button>
-                <button class="speed-btn" data-speed="3">3x</button>
+                <button class="speed-btn" data-speed="3">2x</button>
                 <button class="speed-btn" data-speed="10">10x</button>
                 <button class="speed-btn" data-speed="50">50x</button>
+              </div>
             </div>
         </div>
         <div class="power-indicator"></div>

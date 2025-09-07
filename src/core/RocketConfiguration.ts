@@ -1,5 +1,5 @@
 // Rocket configuration data models
-import { StageConfiguration } from './types.js';
+import type { StageConfiguration } from './types.js';
 
 // Holds stage data and exposes simple helpers for mass, thrust and staging.
 export class RocketConfiguration {
@@ -10,9 +10,9 @@ export class RocketConfiguration {
 
   constructor(
     stages: StageConfiguration[],
-    payloadMass: number = 1000,
-    dragCoefficient: number = 0.3,
-    crossSectionalArea: number = 10
+    payloadMass = 1000,
+    dragCoefficient = 0.3,
+    crossSectionalArea = 10
   ) {
     // Clone stages so incoming objects are not mutated by the game
     this.stages = stages.map((stage) => ({
@@ -156,7 +156,7 @@ export class RocketConfiguration {
    * @param forceStaging Force staging even if conditions aren't met
    * @returns True if staging was successful
    */
-  performStaging(forceStaging: boolean = false): boolean {
+  performStaging(forceStaging = false): boolean {
     const currentStageIndex = this.stages.findIndex((stage) => stage.isActive);
 
     if (currentStageIndex === -1 || currentStageIndex >= this.stages.length - 1) {

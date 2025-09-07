@@ -3,15 +3,17 @@
 A small 2D rocket sandbox available at https://oursmalin.ovh Fly a rocket in your browser: build speed, tip over, coast to your highest point, and round out your orbit. Meant to be a little fun.
 
 ## What It Is
-- A simple web game that shows the feel of orbital flight: throttle, gravity turn, coasting to apoapsis, and circularization.
-- Runs entirely in the browser. Click, fly.
+- Physics + Systems: compact 2D orbital sandbox with drag, heat cues, staging, and guidance.
+- Product polish: Canvas HUD with mini‑map, Δv/TWR, dynamic safety cues, and in‑game overlays (intro, lexicon).
+- Autopilot DSL: small command language and runtime to automate launches (parse, execute, wait‑conditions, TWR/apo/peri targets).
+- TypeScript, modular architecture, Biome lint/format, Vitest tests, Dockerized workflows, Nginx static hosting.
+- Live playable demo, documented scripts, tests and CI.
 
-## What It Does
+## Project Highlights
 - Quick, readable 2D flight around a small planet
 - Smooth controls and HUD with helpful numbers
 - Built‑in “auto pilot” that follows plain‑English‑style commands
 - Lightweight art and effects (exhaust, heat glow, debris)
-
 - Not a full‑fidelity physics simulator
 - Not a real‑scale solar system (Smaller Planet for faster gameplay)
 - Not tied to any backend — all client‑side
@@ -28,6 +30,14 @@ A small 2D rocket sandbox available at https://oursmalin.ovh Fly a rocket in you
 ## Build & Preview
 - Build production files: `docker-compose run --rm game-dev npm run build` (writes `dist/`)
 - Local static preview (Nginx): `docker-compose up game-prod` → http://localhost:8080
+
+### Coverage
+- Generate coverage: `npm run test:coverage` then open `coverage/index.html`.
+- Badge (CI recommended): integrate Codecov or Coveralls in CI for a dynamic badge.
+
+### Pre-commit Hook
+- Husky is configured. After `npm install`, run `npm run prepare` once, then commits run `biome check .`.
+- Uncomment the vitest line in `.husky/pre-commit` to run tests on commit (can be slower).
 
 ## Command List
 - Engine:
@@ -59,12 +69,17 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 ## Tech (short)
 - TypeScript + Vite, Canvas rendering, compact physics
 - Path aliases: `@/`, `@/core`, `@/physics`, `@/rendering`, `@/ui`
-- Tests: Vitest (jsdom) with coverage; Biome for lint/format
+- Tests: Vitest (jsdom) with coverage output (`coverage/`); Biome for lint/format
 
 ## Architecture (dev)
 - Core loop: `GameEngine` orchestrates update → render. Physics uses a semi‑implicit Euler integrator with fixed substeps. Rendering is done with `CanvasRenderer` and HUD overlays in `HUDSystem`.
-- Physics/math: under `src/physics/` — `Vector2`, `RigidBody`, `AtmosphericPhysics`, `OrbitalMechanics`, `PhysicsIntegrator`.
-- Rendering/UI: under `src/rendering/` and `src/ui/` — canvas primitives, rocket renderer, HUD, and fact bubbles (`FactBubblesSystem`).
+- Physics/math: under `src/physics/` — `Vector2`, `RigidBody`, `PhysicsIntegrator`,
+  and function-based helpers `AtmosphericPhysics` and `OrbitalMechanics` (no classes).
+- Rendering/UI: under `src/rendering/` and `src/ui/` — canvas primitives, rocket renderer, HUD, fact bubbles (`FactBubblesSystem`), intro/console/readme overlays.
+- UI overlays are modular: intro menu (`ui/IntroMenu`), autopilot console (`ui/AutopilotConsole`),
+  and reference overlays (`ui/ReadmeOverlay`).
+- Game speed UI reacts to a custom event `game-speed-change` emitted by the engine; DOM toggling
+  is handled in `ui/SpeedControls`.
 - Autopilot: `src/core/Autopilot.ts` parses simple commands and drives the engine through a tiny scheduler.
 - Data: `src/data/` for assets like space facts.
 
@@ -75,4 +90,4 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 - PRs: include rationale and screenshots/GIFs for HUD changes. Keep commits focused and code styled. Avoid unrelated changes.
 
 ## License
-MIT, If there is anything usefull in here
+MIT
