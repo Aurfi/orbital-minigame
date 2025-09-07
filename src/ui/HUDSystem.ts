@@ -109,14 +109,16 @@ export class HUDSystem {
     // Layout metrics
     const panelX = 10;
     const panelY = 10;
-    const panelW = 300 * uiScale;
-    const startY = 30 * uiScale;
-    const lineHeight = 20 * uiScale;
-    const gaugeH = 20 * uiScale;
-    // Estimate needed height: 9 text lines + spacing + gauge
-    const linesCount = 9;
-    const estH = startY + lineHeight * linesCount + 12 * uiScale + gaugeH + 20;
-    const panelH = estH;
+    const panelW = 280 * uiScale; // a bit narrower; content still fits
+    const startY = 24 * uiScale;
+    const lineHeight = 18 * uiScale; // tighter line spacing
+    const gaugeH = 18 * uiScale;
+    // Compute exact height for 9 rows
+    const rows = 9;
+    const contentBottom = startY + lineHeight * rows;
+    const gaugeTopGap = 8 * uiScale;
+    const bottomPad = 12 * uiScale;
+    const panelH = contentBottom + gaugeTopGap + gaugeH + bottomPad;
     // Draw background panel sized to content
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(panelX, panelY, panelW, panelH);
@@ -154,7 +156,7 @@ export class HUDSystem {
     ctx.fillStyle = safetyColor;
     // Place label next to the velocity text, with a small gap; clamp to panel right
     const velW = ctx.measureText(velText).width;
-    const gap = 12 * uiScale;
+    const gap = 10 * uiScale;
     let labelX = 20 + velW + gap;
     const rightPad = 10;
     const maxX = panelX + panelW - rightPad;
