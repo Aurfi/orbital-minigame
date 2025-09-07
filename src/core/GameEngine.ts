@@ -1583,11 +1583,11 @@ export class GameEngine {
       this.shownFacts.add(idx);
       this.saveShownFacts();
 
-      // Spawn bubble pinned to the right side, fixed height so it never covers apo/peri labels
+      // Spawn bubble pinned towards the left so it doesn't overlap MENU/AUTO PILOT buttons
       const screenW = this.canvas.width;
       const panelWidth = 320;
       const margin = 20;
-      const x = screenW - panelWidth / 2 - margin; // right inset
+      const x = panelWidth / 2 + margin; // left inset
       const y = 60; // fixed top height
       const pos = new Vector2(x, y);
       const vel = new Vector2(0, 0); // no drift in screen space

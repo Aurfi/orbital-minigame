@@ -483,10 +483,11 @@ export class HUDSystem {
       const periLabel = isFinite(info.periAlt) ? `${(info.periAlt / 1000).toFixed(0)} km` : '—';
       ctx.fillText(`Periapsis: ${periLabel}`, x, periY);
 
-      // Stable orbit notice
+      // Stable orbit notice (place higher so it doesn't overlap apo/peri labels)
       if (info.stableOrbit) {
         ctx.fillStyle = '#00ff99';
-        ctx.fillText('Stable orbit achieved! 🎉', x, y - 38);
+        const noticeY = y - Math.round(54 * uiScale);
+        ctx.fillText('Stable orbit achieved! 🎉', x, noticeY);
       }
     }
 
