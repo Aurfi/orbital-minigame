@@ -1,41 +1,43 @@
 # Mini Orbital Launch
 
-Tiny 2D rocket sandbox. Build speed, gravity turn, coast to Ap, and circularize — all in your browser.
+A tiny 2D rocket sandbox you can play in the browser. Build speed, tip over, coast to Ap, and circularize. Simple, fast, a bit cheeky, and surprisingly educational.
 
-## Develop & Test (Docker)
+## What It Does
+- Quick‑feel orbital flight on a “small planet” (fun over perfection)
+- Gravity turn guidance vibe with smooth controls and readable HUD
+- Scriptable autopilot console with friendly commands
+- Simple art with juicy effects (exhaust, heat glow, debris)
+
+## What It’s Not
+- Not a full‑fidelity physics simulator
+- Not a real‑scale solar system
+- Not a multiplayer or server game
+- Not tied to any backend — all client‑side
+
+## Quick Start (Docker)
 - Dev server: `docker-compose up game-dev` → http://localhost:9876
-- Run tests: `docker-compose run --rm game-test`
-- Watch tests: `docker-compose run --rm game-test-watch`
-- Lint/format/type-check:
+- Tests (one‑off): `docker-compose run --rm game-test`
+- Tests (watch): `docker-compose run --rm game-test-watch`
+- Lint/format/type‑check:
   - `docker-compose run --rm game-dev npm run lint`
   - `docker-compose run --rm game-dev npm run format`
   - `docker-compose run --rm game-dev npm run type-check`
 
-## Build & Serve
-- Build production assets: `docker-compose run --rm game-dev npm run build` (outputs `dist/`)
-- Serve built assets locally (Nginx): `docker-compose up game-prod` → http://localhost:8080
-- Deploy: copy `dist/` to any static host (GitHub Pages workflow available)
+## Build & Preview
+- Build production files: `docker-compose run --rm game-dev npm run build` (writes `dist/`)
+- Local static preview (Nginx): `docker-compose up game-prod` → http://localhost:8080
 
-## Highlights
-- Scriptable “Auto Pilot” console (no coding needed):
-  `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoapsis hold prograde ignite throttle 1 until periapsis = 110000 cut`
-- Realistic gravity‑turn feel (prograde guidance), tiny‑planet orbital mechanics
-- Smooth vector + sprite art, exhaust/heat effects, space facts, kid‑friendly UI
-
-## Commands (short list)
+## Autopilot Cheatsheet
 - `ignite`, `cut`, `throttle 0..1`
-- `pitch east|west <deg>`, `hold prograde`, `hold retrograde`
+- `pitch east|west <deg>`, `hold prograde`, `hold retrograde`, `hold up`
 - `wait <seconds>`
-- `wait until altitude <m>`, `wait until apoapsis`, `wait until periapsis`, `wait until stage empty`
-- `until apoapsis = <m>`, `until periapsis = <m>` (with current throttle)
+- `wait until apoapsis | periapsis | stage empty`
+- `until apoapsis = <m>` or `until periapsis = <m>` (optional `throttle <x>`)
 
-## Local (optional)
-Direct `npm` on the host is discouraged. If needed:
-```bash
-npm ci
-npm run dev   # http://localhost:9876
-npm run build # outputs dist/
-```
+## Tech (short)
+- TypeScript + Vite, canvas rendering, tiny physics
+- Path aliases: `@/`, `@/core`, `@/physics`, `@/rendering`, `@/ui`
+- Tests: Vitest (jsdom) with coverage; Biome for lint/format
 
 ## License
 MIT
