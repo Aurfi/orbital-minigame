@@ -70,6 +70,7 @@ Example: `ignite throttle 1 until apoapsis = 100000 throttle 0 wait until apoaps
 - TypeScript + Vite, Canvas rendering, compact physics
 - Path aliases: `@/`, `@/core`, `@/physics`, `@/rendering`, `@/ui`
 - Tests: Vitest (jsdom) with coverage output (`coverage/`); Biome for lint/format
+- Test coverage: 54+ tests covering physics, autopilot DSL, atmospheric mechanics, and UI
 
 ## Architecture (dev)
 - Core loop: `GameEngine` orchestrates update → render. Physics uses a semi‑implicit Euler integrator with fixed substeps. Rendering is done with `CanvasRenderer` and HUD overlays in `HUDSystem`.
