@@ -427,7 +427,7 @@ export class GameEngine {
     }
 
     this.initializeGameState();
-    console.log('Game reset');
+    this.debugLog('Game reset');
   }
 
   /**

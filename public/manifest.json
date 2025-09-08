@@ -1,0 +1,50 @@
+{
+  "name": "Mini Orbital Launch - 2D Rocket Simulator",
+  "short_name": "Orbital Launch",
+  "description": "A physics-based 2D rocket launch simulator. Build speed, control your rocket, achieve orbit around a small planet. Features realistic orbital mechanics, atmospheric drag, and autopilot scripting.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a1929",
+  "theme_color": "#1976d2",
+  "categories": ["games", "education", "simulation"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/assets/screenshot-game.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "label": "Gameplay showing rocket launch and HUD"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

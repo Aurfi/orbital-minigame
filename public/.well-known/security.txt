@@ -1,0 +1,19 @@
+# Security Policy for Mini Orbital Launch Game
+
+Contact: security@oursmalin.ovh
+Expires: 2025-12-31T23:59:59.000Z
+Preferred-Languages: en, fr
+Canonical: https://oursmalin.ovh/.well-known/security.txt
+
+# Scope
+This security.txt file applies to:
+- https://oursmalin.ovh
+- Mini Orbital Launch Game web application
+
+# Reporting
+Please report security vulnerabilities responsibly.
+We appreciate your efforts to improve the security of our game.
+
+# Policy
+We are committed to addressing security issues promptly.
+This is an open-source educational game project.

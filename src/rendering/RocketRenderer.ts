@@ -361,10 +361,11 @@ export class RocketRenderer {
 
   /**
    * Draw separated stages (visual decoupling animation)
+   * Note: Separated stages animation is now handled by StageManager
    */
   private drawSeparatedStages(renderer: CanvasRenderer, rocketState: RocketState): void {
-    // TODO: Add animated separated stages falling away
-    // For now, separated stages just disappear (handled by only drawing active+ stages)
+    // Separated stages animation is handled by StageManager
+    // This method is kept for potential future use
   }
 
   /**

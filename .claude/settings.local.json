@@ -4,7 +4,9 @@
       "Read(//media/oursmalin/**)",
       "Bash(git add:*)",
       "Bash(npm run format:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
