@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- background tile -->
+  <rect width="64" height="64" rx="12" ry="12" fill="#0d1323"/>
+  <!-- simple vector rocket -->
+  <g transform="translate(32,34) rotate(-45)">
+    <!-- flame -->
+    <ellipse cx="0" cy="16" rx="4" ry="8" fill="#ff6a00"/>
+    <ellipse cx="0" cy="20" rx="2" ry="4" fill="#ffd400"/>
+    <!-- body -->
+    <rect x="-5" y="-14" width="10" height="28" rx="5" fill="#cfd5e2" stroke="#6a738b" stroke-width="2"/>
+    <!-- nose -->
+    <path d="M -5 -14 Q 0 -22 5 -14 Z" fill="#cfd5e2" stroke="#6a738b" stroke-width="2"/>
+    <!-- fin ring -->
+    <rect x="-6" y="6" width="12" height="4" rx="2" fill="#6a738b"/>
+  </g>
+</svg>

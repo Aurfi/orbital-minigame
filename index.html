@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Orbital Launch - 2D Rocket Physics Simulator | Play Online</title>
+    
+    <!-- Primary Meta Tags -->
+    <meta name="title" content="Mini Orbital Launch - 2D Rocket Physics Simulator | Play Online">
+    <meta name="description" content="Launch and control a rocket in this physics-based 2D space simulator. Master orbital mechanics, atmospheric drag, staging, and autopilot scripting. Free browser game inspired by KSP.">
+    <meta name="keywords" content="rocket simulator, orbital mechanics, space game, physics game, browser game, 2D simulator, KSP inspired, rocket launch game, orbit simulator, space simulation">
+    <meta name="author" content="Oursmalin">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="English">
+    <meta name="revisit-after" content="7 days">
+    <meta name="distribution" content="global">
+    <meta name="rating" content="general">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://oursmalin.ovh/">
+    <meta property="og:title" content="Mini Orbital Launch - 2D Rocket Physics Simulator">
+    <meta property="og:description" content="Launch and control a rocket in this physics-based 2D space simulator. Master orbital mechanics, atmospheric drag, and achieve stable orbit!">
+    <meta property="og:image" content="https://oursmalin.ovh/apple-touch-icon.png">
+    <meta property="og:site_name" content="Mini Orbital Launch">
+    <meta property="og:locale" content="en_US">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://oursmalin.ovh/">
+    <meta property="twitter:title" content="Mini Orbital Launch - 2D Rocket Physics Simulator">
+    <meta property="twitter:description" content="Launch and control a rocket in this physics-based 2D space simulator. Free browser game!">
+    <meta property="twitter:image" content="https://oursmalin.ovh/apple-touch-icon.png">
+    
+    <!-- PWA & Mobile -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Orbital Launch">
+    <meta name="application-name" content="Mini Orbital Launch">
+    <meta name="msapplication-TileColor" content="#0d1323">
+    <meta name="msapplication-config" content="/browserconfig.xml">
+    <meta name="theme-color" content="#0d1323">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://oursmalin.ovh/">
+    
+    <!-- Favicon set (relative paths for subfolder safety) -->
+    <link rel="icon" href="./favicon.ico?v=3" sizes="any" type="image/x-icon" />
+    <link rel="shortcut icon" href="./favicon.ico?v=3" type="image/x-icon" />
+    <link rel="icon" href="./favicon-32x32.png?v=3" type="image/png" sizes="32x32" />
+    <link rel="icon" href="./favicon-16x16.png?v=3" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png?v=3" sizes="180x180" />
+    
+    <!-- Performance -->
+    <link rel="dns-prefetch" href="https://oursmalin.ovh">
+    <link rel="preconnect" href="https://oursmalin.ovh">
+    
+    <!-- Structured Data / JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      "name": "Mini Orbital Launch",
+      "description": "A physics-based 2D rocket launch simulator. Build speed, control your rocket, achieve orbit around a small planet.",
+      "url": "https://oursmalin.ovh",
+      "image": "https://oursmalin.ovh/apple-touch-icon.png",
+      "author": {
+        "@type": "Person",
+        "name": "Oursmalin"
+      },
+      "genre": ["Simulation", "Educational", "Physics"],
+      "gameplayMode": "SinglePlayer",
+      "inLanguage": "en",
+      "operatingSystem": "Web Browser",
+      "gamePlatform": ["PC", "Mobile", "Tablet"],
+      "applicationCategory": "Game",
+      "browserRequirements": "HTML5 Canvas Support",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "42"
+      }
+    }
+    </script>
+    
+    <!-- Additional structured data for WebApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Mini Orbital Launch",
+      "url": "https://oursmalin.ovh",
+      "applicationCategory": "GameApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript, HTML5 Canvas",
+      "permissions": "audio",
+      "screenshot": "https://oursmalin.ovh/assets/screenshot-game.png",
+      "softwareVersion": "1.0.0",
+      "datePublished": "2024-12-01",
+      "dateModified": "2025-01-08"
+    }
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            /* Less space at the top, a bit more at the bottom so the console fits */
+            padding: 16px 20px 26px; /* trim bottom padding to give console more room */
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center; /* center horizontally */
+            align-items: flex-start; /* stick monitor towards the top */
+        }
+        
+        .monitor-container {
+            position: relative;
+            background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+            border-radius: 20px;
+            /* Tighter at the top, a touch more at the bottom */
+            padding: 12px 20px 14px; /* reduce bottom padding to raise content */
+            box-shadow: 
+                0 20px 40px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1),
+                inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+            width: 98vw;
+            height: 97vh; /* give a bit more vertical room inside the monitor */
+            max-width: 1800px;
+            max-height: 1000px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .monitor-container::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            bottom: 10px; /* reduce inner bottom gap */
+            border: 2px solid #555;
+            border-radius: 15px;
+            pointer-events: none;
+        }
+        
+        .screen-bezel {
+            position: relative;
+            background: #111;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.8),
+                inset 0 2px 4px rgba(0, 0, 0, 0.9);
+            flex: 1 1 auto; /* take remaining height */
+            min-height: 380px;
+            overflow: hidden; /* clip canvas to rounded corners */
+        }
+        
+        .screen-bezel::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            bottom: 8px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(to bottom, #001122 0%, #003366 100%);
+            border-radius: 8px;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .monitor-brand {
+            position: absolute;
+            bottom: -5px;
+            right: 30px;
+            color: #666;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        
+        .power-indicator {
+            position: absolute;
+            bottom: 8px;
+            left: 30px;
+            width: 8px;
+            height: 8px;
+            background: #00ff00;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #00ff00;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .control-panel {
+            margin-top: 10px;
+            padding: 8px 15px;
+            background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+            border-radius: 8px;
+            border: 1px solid #444;
+            /* Reserve enough space for the console */
+            flex: 0 0 300px; /* slightly taller console area */
+            min-height: 240px;
+            overflow: hidden;
+        }
+        
+        .toolbar-row { position: relative; min-height: 30px; }
+        .speed-controls { display: inline-flex; align-items: center; gap: 10px; }
+        
+        .control-label {
+            color: #ccc;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        
+        .speed-btn {
+            background: linear-gradient(145deg, #404040, #303030);
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 4px 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 30px;
+        }
+        
+        .speed-btn:hover {
+            background: linear-gradient(145deg, #505050, #404040);
+            border-color: #666;
+            color: #fff;
+        }
+        
+        .speed-btn.active {
+            background: linear-gradient(145deg, #006600, #004400);
+            border-color: #008800;
+            color: #ffffff;
+            box-shadow: 0 0 8px rgba(0, 136, 0, 0.3);
+        }
+        
+        .speed-btn:active {
+            transform: translateY(1px);
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: 5px;
+            }
+            
+            .monitor-container {
+                width: 100vw;
+                height: 98vh;
+                padding: 10px 12px 18px;
+                border-radius: 15px;
+            }
+            
+            .screen-bezel {
+                padding: 10px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 2px;
+            }
+            
+            .monitor-container {
+                width: 100vw;
+                height: 100vh;
+                padding: 8px 10px 14px;
+                border-radius: 10px;
+            }
+            
+            .screen-bezel {
+                padding: 5px;
+            }
+        }
+
+        .page-footer {
+            width: 100%;
+            text-align: center;
+            padding: 4px 0 6px; /* smaller footer padding for more console space */
+            color: #a8afbd;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .page-footer a { color: #9ecbff; text-decoration: none; }
+        .page-footer a:hover { text-decoration: underline; }
+  </style>
+  <script type="module" crossorigin src="/assets/index-DS902wvm.js"></script>
+</head>
+<body>
+    
+    <div class="monitor-container">
+        <div class="screen-bezel">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+        <div class="control-panel">
+            <div class="toolbar-row">
+              <div class="speed-controls">
+                <span class="control-label">Game Speed:</span>
+                <button class="speed-btn active" data-speed="1">1x</button>
+                <button class="speed-btn" data-speed="3">2x</button>
+                <button class="speed-btn" data-speed="10">10x</button>
+                <button class="speed-btn" data-speed="50">50x</button>
+              </div>
+            </div>
+        </div>
+        <div class="power-indicator"></div>
+        <div class="monitor-brand">ORBITAL</div>
+        <div class="page-footer">
+          AurFi — <a href="https://github.com/Aurfi/orbital-minigame" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+  </div>
+</body>
+</html>

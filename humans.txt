@@ -1,0 +1,30 @@
+# The humans behind Mini Orbital Launch
+
+/* TEAM */
+Developer: Oursmalin
+Site: https://oursmalin.ovh
+Location: France
+
+/* THANKS */
+Inspiration: Kerbal Space Program Community
+Physics Engine: Custom TypeScript Implementation
+Sound Effects: Freesound.org Contributors
+
+/* TECHNOLOGY */
+Language: TypeScript
+Framework: Vanilla JS with Canvas API
+Build Tool: Vite
+Code Quality: Biome
+Testing: Vitest
+Hosting: OVH
+Version Control: Git/GitHub
+
+/* FEATURES */
+- Realistic 2D orbital mechanics
+- Atmospheric drag simulation
+- Multi-stage rocket support
+- Autopilot scripting language
+- Real-time HUD with orbital parameters
+- Responsive design for all devices
+
+Last update: 2025/01/08
